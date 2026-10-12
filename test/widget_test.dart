@@ -13,7 +13,7 @@ import 'package:triagedesk/main.dart';
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const ITicketApp());
+    await tester.pumpWidget(const TriageDeskApp());
 
     // Verify that our counter starts at 0.
     expect(find.text('0'), findsOneWidget);

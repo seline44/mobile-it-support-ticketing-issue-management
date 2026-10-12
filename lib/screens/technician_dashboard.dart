@@ -12,7 +12,7 @@ class TechnicianDashboard extends StatefulWidget {
 
 class _TechnicianDashboardState extends State<TechnicianDashboard> {
   // ============================================================
-  // iTICKET COLORS
+  // TRIAGEDESK COLORS
   // Same visual system used by Reporter Dashboard
   // ============================================================
 
@@ -67,7 +67,7 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text(
-          'iTicket',
+          'TriageDesk',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             letterSpacing: 0.3,

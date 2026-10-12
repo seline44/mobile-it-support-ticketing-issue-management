@@ -51,13 +51,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
       Widget? dashboard;
 
-      if (email == 'reporter@iticket.com' &&
+      if (email == 'reporter@triagedesk.com' &&
           password == 'Reporter@123') {
         dashboard = const ReporterDashboard();
-      } else if (email == 'technician@iticket.com' &&
+      } else if (email == 'technician@triagedesk.com' &&
           password == 'Technician@123') {
         dashboard = const TechnicianDashboard();
-      } else if (email == 'admin@iticket.com' &&
+      } else if (email == 'admin@triagedesk.com' &&
           password == 'Admin@123') {
         dashboard = const AdminDashboard();
       }
@@ -192,7 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const Center(
                   child: Text(
-                    'iTicket',
+                    'TriageDesk',
                     style: TextStyle(
                       fontSize: 30,
                       fontWeight: FontWeight.bold,
@@ -206,7 +206,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const Center(
                   child: Text(
-                    'IT Support Ticketing System',
+                    'TriageDesk',
                     style: TextStyle(
                       fontSize: 14,
                       color: textSecondary,
@@ -229,7 +229,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 7),
 
                 const Text(
-                  'Sign in to access your iTicket account.',
+                  'Sign in to access your TriageDesk account.',
                   style: TextStyle(
                     fontSize: 14,
                     color: textSecondary,
@@ -401,7 +401,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const Center(
                   child: Text(
-                    'iTicket • IT Support Management',
+                    'TriageDesk • IT Support Management',
                     style: TextStyle(
                       fontSize: 12,
                       color: textSecondary,

@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
 
 void main() {
-  runApp(const ITicketApp());
+  runApp(const TriageDeskApp());
 }
 
-class ITicketApp extends StatelessWidget {
-  const ITicketApp({super.key});
+class TriageDeskApp extends StatelessWidget {
+  const TriageDeskApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'iTicket',
+      title: 'TriageDesk',
       theme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF5F7FA),
@@ -71,7 +71,7 @@ class WelcomeScreen extends StatelessWidget {
 
               // App name
               const Text(
-                'iTicket',
+                'TriageDesk',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 34,
