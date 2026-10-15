@@ -1,7 +1,12 @@
+
 import 'package:flutter/material.dart';
+
+import 'register_screen.dart';
+import '../services/api_service.dart';
 import 'reporter_dashboard.dart';
 import 'technician_dashboard.dart';
 import 'admin_dashboard.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,7 +17,6 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
@@ -32,63 +36,63 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _login() {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
-    // Temporary local authentication.
-    // This will later be replaced by FastAPI + PostgreSQL authentication.
-    Future.delayed(const Duration(milliseconds: 700), () {
+    try {
+      final result = await ApiService.login(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
       if (!mounted) return;
 
-      final email = _emailController.text.trim().toLowerCase();
-      final password = _passwordController.text;
+      final user = Map<String, dynamic>.from(result['user'] as Map);
+      final role = user['role']?.toString();
 
-      Widget? dashboard;
+      late final Widget dashboard;
 
-      if (email == 'reporter@triagedesk.com' &&
-          password == 'Reporter@123') {
-        dashboard = const ReporterDashboard();
-      } else if (email == 'technician@triagedesk.com' &&
-          password == 'Technician@123') {
-        dashboard = const TechnicianDashboard();
-      } else if (email == 'admin@triagedesk.com' &&
-          password == 'Admin@123') {
-        dashboard = const AdminDashboard();
+      switch (role) {
+        case 'Reporter':
+          dashboard = const ReporterDashboard();
+          break;
+        case 'Technician':
+          dashboard = const TechnicianDashboard();
+          break;
+        case 'Administrator':
+          dashboard = const AdminDashboard();
+          break;
+        default:
+          throw Exception('Your account has an unrecognized role.');
       }
 
-      setState(() {
-        _isLoading = false;
-      });
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => dashboard),
+      );
+    } catch (error) {
+      if (!mounted) return;
 
-      if (dashboard != null) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => dashboard!,
+      final message = error.toString().replaceFirst('Exception: ', '');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Invalid email or password.',
-            ),
-            backgroundColor: Colors.red.shade700,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
-    });
+    }
   }
 
   InputDecoration _inputDecoration({
@@ -100,54 +104,35 @@ class _LoginScreenState extends State<LoginScreen> {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      prefixIcon: Icon(
-        icon,
-        color: navy,
-      ),
+      prefixIcon: Icon(icon, color: navy),
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.white,
-      labelStyle: const TextStyle(
-        color: textSecondary,
-      ),
-      hintStyle: const TextStyle(
-        color: Colors.grey,
-      ),
+      labelStyle: const TextStyle(color: textSecondary),
+      hintStyle: const TextStyle(color: Colors.grey),
       contentPadding: const EdgeInsets.symmetric(
         horizontal: 16,
         vertical: 17,
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(
-          color: Colors.grey.shade300,
-        ),
+        borderSide: BorderSide(color: Colors.grey.shade300),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(
-          color: Colors.grey.shade300,
-        ),
+        borderSide: BorderSide(color: Colors.grey.shade300),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: blue,
-          width: 2,
-        ),
+        borderSide: const BorderSide(color: blue, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: Colors.red,
-        ),
+        borderSide: const BorderSide(color: Colors.red),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: Colors.red,
-          width: 2,
-        ),
+        borderSide: const BorderSide(color: Colors.red, width: 2),
       ),
     );
   }
@@ -164,7 +149,6 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Logo / branding
                 Center(
                   child: Container(
                     width: 76,
@@ -187,9 +171,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
                 const Center(
                   child: Text(
                     'TriageDesk',
@@ -201,22 +183,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 6),
-
                 const Center(
                   child: Text(
-                    'TriageDesk',
+                    'IT Support Management',
                     style: TextStyle(
                       fontSize: 14,
                       color: textSecondary,
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 40),
-
-                // Login heading
                 const Text(
                   'Welcome back',
                   style: TextStyle(
@@ -225,9 +202,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: textPrimary,
                   ),
                 ),
-
                 const SizedBox(height: 7),
-
                 const Text(
                   'Sign in to access your TriageDesk account.',
                   style: TextStyle(
@@ -236,10 +211,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     height: 1.4,
                   ),
                 ),
-
                 const SizedBox(height: 26),
-
-                // Email
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -253,18 +225,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     if (value == null || value.trim().isEmpty) {
                       return 'Please enter your email address.';
                     }
-
                     if (!value.contains('@')) {
                       return 'Please enter a valid email address.';
                     }
-
                     return null;
                   },
                 ),
-
                 const SizedBox(height: 18),
-
-                // Password
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -292,26 +259,26 @@ class _LoginScreenState extends State<LoginScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your password.';
                     }
-
                     return null;
                   },
                 ),
-
                 const SizedBox(height: 12),
 
-                // Forgot password
+                // Forgot Password navigation — only one button.
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Password recovery will be available in a later version.',
-                          ),
-                        ),
-                      );
-                    },
+                    onPressed: _isLoading
+                        ? null
+                        : () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const ForgotPasswordScreen(),
+                              ),
+                            );
+                          },
                     child: const Text(
                       'Forgot Password?',
                       style: TextStyle(
@@ -323,8 +290,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
 
                 const SizedBox(height: 12),
-
-                // Login button
                 SizedBox(
                   width: double.infinity,
                   height: 54,
@@ -360,10 +325,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                   ),
                 ),
-
                 const SizedBox(height: 24),
-
-                // Security information
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(15),
@@ -396,9 +358,39 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 35),
-
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      "Don't have an account? ",
+                      style: TextStyle(
+                        color: textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const RegisterScreen(),
+                                ),
+                              );
+                            },
+                      child: const Text(
+                        'Create Account',
+                        style: TextStyle(
+                          color: blue,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const Center(
                   child: Text(
                     'TriageDesk • IT Support Management',

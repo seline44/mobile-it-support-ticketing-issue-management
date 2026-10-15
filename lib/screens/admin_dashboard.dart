@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/ticket.dart';
 import '../services/ticket_service.dart';
+import '../services/api_service.dart';
 
 const Color adminNavy = Color(0xFF12355B);
 const Color adminBlue = Color(0xFF2563EB);
@@ -776,35 +777,203 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
   }
 }
 
-// ============================================================
-// USERS AND TECHNICIANS — INITIAL INTERFACE
-// ============================================================
 
-class AdminUsersScreen extends StatelessWidget {
+ 
+ // ============================================================
+ // USERS AND TECHNICIANS — ACCOUNT MANAGEMENT
+ // ============================================================
+
+class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
 
   @override
+  State<AdminUsersScreen> createState() => _AdminUsersScreenState();
+}
+
+class _AdminUsersScreenState extends State<AdminUsersScreen> {
+  List<dynamic> _users = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+  String _selectedFilter = 'All';
+
+  final Set<int> _updatingUserIds = {};
+
+  final List<String> _filters = [
+    'All',
+    'Pending',
+    'Approved',
+    'Rejected',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsers();
+  }
+
+  Future<void> _loadUsers() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final users = await ApiService.getAllUsers();
+
+      if (!mounted) return;
+
+      setState(() {
+        _users = users;
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage =
+            error.toString().replaceFirst('Exception: ', '');
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _approvalStatus(Map<String, dynamic> user) {
+    final status = (user['approval_status'] ?? 'Pending')
+        .toString()
+        .trim();
+
+    if (status.toLowerCase() == 'approved') return 'Approved';
+    if (status.toLowerCase() == 'rejected') return 'Rejected';
+    if (status.toLowerCase() == 'pending') return 'Pending';
+
+    return status.isEmpty ? 'Pending' : status;
+  }
+
+  int _countFor(String status) {
+    if (status == 'All') return _users.length;
+
+    return _users.where((item) {
+      if (item is! Map) return false;
+
+      return _approvalStatus(
+            Map<String, dynamic>.from(item),
+          ).toLowerCase() ==
+          status.toLowerCase();
+    }).length;
+  }
+
+  List<Map<String, dynamic>> get _filteredUsers {
+    final result = <Map<String, dynamic>>[];
+
+    for (final item in _users) {
+      if (item is! Map) continue;
+
+      final user = Map<String, dynamic>.from(item);
+      final status = _approvalStatus(user);
+
+      if (_selectedFilter == 'All' ||
+          status.toLowerCase() == _selectedFilter.toLowerCase()) {
+        result.add(user);
+      }
+    }
+
+    result.sort((a, b) {
+      final nameA = (a['full_name'] ?? a['email'] ?? '')
+          .toString()
+          .toLowerCase();
+      final nameB = (b['full_name'] ?? b['email'] ?? '')
+          .toString()
+          .toLowerCase();
+
+      return nameA.compareTo(nameB);
+    });
+
+    return result;
+  }
+
+  Future<void> _updateApproval(
+    Map<String, dynamic> user,
+    String status,
+  ) async {
+    final dynamic rawId = user['id'] ?? user['user_id'];
+    final int? userId = rawId is int
+        ? rawId
+        : int.tryParse(rawId?.toString() ?? '');
+
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not identify this account.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _updatingUserIds.add(userId));
+
+    try {
+      await ApiService.updateUserApproval(
+        userId: userId,
+        approvalStatus: status,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        for (final item in _users) {
+          if (item is! Map) continue;
+
+          final dynamic itemId = item['id'] ?? item['user_id'];
+
+          if (itemId.toString() == userId.toString()) {
+            item['approval_status'] = status;
+            break;
+          }
+        }
+
+        _updatingUserIds.remove(userId);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            status == 'Approved'
+                ? 'Account approved successfully.'
+                : 'Account rejected successfully.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() => _updatingUserIds.remove(userId));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.toString().replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    }
+  }
+
+  Color _statusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'approved':
+        return adminGreen;
+      case 'pending':
+        return adminAmber;
+      case 'rejected':
+        return adminRed;
+      default:
+        return adminSecondary;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final users = [
-      (
-        'Reporter',
-        'reporter@triagedesk.com',
-        Icons.person_outline,
-        adminBlue,
-      ),
-      (
-        'Technician',
-        'technician@triagedesk.com',
-        Icons.support_agent,
-        adminGreen,
-      ),
-      (
-        'Administrator',
-        'admin@triagedesk.com',
-        Icons.admin_panel_settings_outlined,
-        const Color(0xFF7C3AED),
-      ),
-    ];
+    final visibleUsers = _filteredUsers;
 
     return Scaffold(
       backgroundColor: adminBackground,
@@ -812,75 +981,388 @@ class AdminUsersScreen extends StatelessWidget {
         title: const Text('Users and Technicians'),
         backgroundColor: adminNavy,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Refresh users',
+            onPressed: _isLoading ? null : _loadUsers,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      body: RefreshIndicator(
+        onRefresh: _loadUsers,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Text(
+              'User Management',
+              style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.w800,
+                color: adminText,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'View registered accounts and manage registration approvals.',
+              style: TextStyle(
+                color: adminSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            if (!_isLoading && _errorMessage == null) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: _summaryCard(
+                      'Total Users',
+                      _countFor('All'),
+                      adminBlue,
+                      Icons.people_outline_rounded,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _summaryCard(
+                      'Pending',
+                      _countFor('Pending'),
+                      adminAmber,
+                      Icons.pending_actions_rounded,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _summaryCard(
+                      'Approved',
+                      _countFor('Approved'),
+                      adminGreen,
+                      Icons.verified_user_outlined,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _summaryCard(
+                      'Rejected',
+                      _countFor('Rejected'),
+                      adminRed,
+                      Icons.person_off_outlined,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Filter accounts',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: adminText,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final filter in _filters)
+                    ChoiceChip(
+                      label: Text('$filter (${_countFor(filter)})'),
+                      selected: _selectedFilter == filter,
+                      onSelected: (_) {
+                        setState(() => _selectedFilter = filter);
+                      },
+                      selectedColor: adminNavy.withValues(alpha: 0.12),
+                      labelStyle: TextStyle(
+                        color: _selectedFilter == filter
+                            ? adminNavy
+                            : adminText,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_errorMessage != null)
+              Card(
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: adminRed,
+                        size: 42,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _errorMessage!,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton(
+                        onPressed: _loadUsers,
+                        child: const Text('Try again'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (visibleUsers.isEmpty)
+              Card(
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 32,
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        _selectedFilter == 'Pending'
+                            ? Icons.verified_user_outlined
+                            : Icons.people_outline_rounded,
+                        size: 48,
+                        color: adminSecondary,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _selectedFilter == 'Pending'
+                            ? 'No pending registrations'
+                            : 'No ${_selectedFilter.toLowerCase()} users',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
+                          color: adminText,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Try another filter or refresh the list.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: adminSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else ...[
+              Text(
+                '${visibleUsers.length} '
+                '${visibleUsers.length == 1 ? 'account' : 'accounts'}',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: adminText,
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final user in visibleUsers) _buildUserCard(user),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryCard(
+    String title,
+    int count,
+    Color color,
+    IconData icon,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFFE4E7EC)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Account Overview',
-            style: TextStyle(
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 12),
+          Text(
+            '$count',
+            style: const TextStyle(
+              color: adminText,
               fontSize: 25,
               fontWeight: FontWeight.w800,
-              color: adminText,
             ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'These are the local demonstration roles currently used '
-            'by the application. Persistent user management is not '
-            'connected yet.',
-            style: TextStyle(
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: const TextStyle(
               color: adminSecondary,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 20),
-          for (final user in users)
-            Card(
-              color: Colors.white,
-              elevation: 0,
-              margin: const EdgeInsets.only(bottom: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(color: Color(0xFFE4E7EC)),
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(14),
-                leading: CircleAvatar(
-                  backgroundColor: user.$4.withValues(alpha: 0.12),
-                  child: Icon(user.$3, color: user.$4),
-                ),
-                title: Text(
-                  user.$1,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 5),
-                  child: Text(user.$2),
-                ),
-                trailing: const Icon(
-                  Icons.verified_user_outlined,
-                  color: adminSecondary,
-                ),
-              ),
-            ),
-          const SizedBox(height: 8),
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Next step: implement database-backed user records, '
-                'account activation, technician assignment and '
-                'role-based permissions in the backend.',
-                style: TextStyle(height: 1.5),
-              ),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildUserCard(Map<String, dynamic> user) {
+    final name = (
+      user['full_name'] ??
+      user['name'] ??
+      user['username'] ??
+      'Unnamed user'
+    ).toString();
+
+    final email = (user['email'] ?? 'No email provided').toString();
+    final role = (user['role'] ?? 'Reporter').toString();
+    final status = _approvalStatus(user);
+
+    final dynamic rawId = user['id'] ?? user['user_id'];
+    final int? userId = rawId is int
+        ? rawId
+        : int.tryParse(rawId?.toString() ?? '');
+
+    final isUpdating =
+        userId != null && _updatingUserIds.contains(userId);
+    final isPending = status.toLowerCase() == 'pending';
+
+    final roleColor = role.toLowerCase() == 'technician'
+        ? adminGreen
+        : role.toLowerCase() == 'administrator'
+            ? adminNavy
+            : adminBlue;
+
+    final statusColor = _statusColor(status);
+
+    return Card(
+      color: Colors.white,
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 14),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE4E7EC)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 23,
+                  backgroundColor: roleColor.withValues(alpha: 0.12),
+                  child: Icon(
+                    role.toLowerCase() == 'technician'
+                        ? Icons.support_agent_rounded
+                        : role.toLowerCase() == 'administrator'
+                            ? Icons.admin_panel_settings_outlined
+                            : Icons.person_outline_rounded,
+                    color: roleColor,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          color: adminText,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        email,
+                        style: const TextStyle(
+                          color: adminSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _Pill(label: role, color: roleColor),
+                          _Pill(label: status, color: statusColor),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (isPending) ...[
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: isUpdating || userId == null
+                          ? null
+                          : () => _updateApproval(user, 'Rejected'),
+                      icon: const Icon(Icons.close_rounded),
+                      label: const Text('Reject'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: adminRed,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: isUpdating || userId == null
+                          ? null
+                          : () => _updateApproval(user, 'Approved'),
+                      icon: isUpdating
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.check_rounded),
+                      label: Text(
+                        isUpdating ? 'Updating...' : 'Approve',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: adminGreen,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
+
+
 
 // ============================================================
 // SLA MONITORING — PROVISIONAL AGE-BASED MONITORING
@@ -921,12 +1403,7 @@ class AdminSlaScreen extends StatelessWidget {
               color: adminText,
             ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Provisional monitoring: unresolved tickets at least '
-            '24 hours old are flagged for review.',
-            style: TextStyle(color: adminSecondary, height: 1.5),
-          ),
+          
           const SizedBox(height: 20),
           Row(
             children: [
@@ -1003,17 +1480,7 @@ class AdminSlaScreen extends StatelessWidget {
                   },
                 ),
               ),
-          const SizedBox(height: 8),
-          const Text(
-            'This is not yet an SLA compliance calculation. Actual '
-            'deadlines, configurable targets, escalation rules and '
-            'breach history require additional data and backend logic.',
-            style: TextStyle(
-              color: adminSecondary,
-              fontSize: 12,
-              height: 1.5,
-            ),
-          ),
+       
         ],
       ),
     );
