@@ -787,198 +787,27 @@ class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
 
   @override
-  State<AdminUsersScreen> createState() => _AdminUsersScreenState();
-}
-
-class _AdminUsersScreenState extends State<AdminUsersScreen> {
-  List<dynamic> _users = [];
-  bool _isLoading = true;
-  String? _errorMessage;
-  String _selectedFilter = 'All';
-
-  final Set<int> _updatingUserIds = {};
-
-  final List<String> _filters = [
-    'All',
-    'Pending',
-    'Approved',
-    'Rejected',
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUsers();
-  }
-
-  
-  Future<void> _loadUsers() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      debugPrint('ADMIN USERS: Starting request...');
-      final users = await ApiService.getAllUsers();
-
-      debugPrint('ADMIN USERS: Received ${users.length} users');
-      debugPrint('ADMIN USERS: Data = $users');
-
-      if (!mounted) return;
-      setState(() {
-        _users = users;
-        _isLoading = false;
-      });
-    } catch (error, stackTrace) {
-      debugPrint('ADMIN USERS ERROR: $error');
-      debugPrint('ADMIN USERS STACK TRACE: $stackTrace');
-
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = error.toString().replaceFirst('Exception: ', '');
-        _isLoading = false;
-      });
-    }
-  }
-
-  String _approvalStatus(Map<String, dynamic> user) {
-    final status = (user['approval_status'] ?? 'Pending')
-        .toString()
-        .trim();
-
-    if (status.toLowerCase() == 'approved') return 'Approved';
-    if (status.toLowerCase() == 'rejected') return 'Rejected';
-    if (status.toLowerCase() == 'pending') return 'Pending';
-
-    return status.isEmpty ? 'Pending' : status;
-  }
-
-  int _countFor(String status) {
-    if (status == 'All') return _users.length;
-
-    return _users.where((item) {
-      if (item is! Map) return false;
-
-      return _approvalStatus(
-            Map<String, dynamic>.from(item),
-          ).toLowerCase() ==
-          status.toLowerCase();
-    }).length;
-  }
-
-  List<Map<String, dynamic>> get _filteredUsers {
-    final result = <Map<String, dynamic>>[];
-
-    for (final item in _users) {
-      if (item is! Map) continue;
-
-      final user = Map<String, dynamic>.from(item);
-      final status = _approvalStatus(user);
-
-      if (_selectedFilter == 'All' ||
-          status.toLowerCase() == _selectedFilter.toLowerCase()) {
-        result.add(user);
-      }
-    }
-
-    result.sort((a, b) {
-      final nameA = (a['full_name'] ?? a['email'] ?? '')
-          .toString()
-          .toLowerCase();
-      final nameB = (b['full_name'] ?? b['email'] ?? '')
-          .toString()
-          .toLowerCase();
-
-      return nameA.compareTo(nameB);
-    });
-
-    return result;
-  }
-
-  Future<void> _updateApproval(
-    Map<String, dynamic> user,
-    String status,
-  ) async {
-    final dynamic rawId = user['id'] ?? user['user_id'];
-    final int? userId = rawId is int
-        ? rawId
-        : int.tryParse(rawId?.toString() ?? '');
-
-    if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not identify this account.'),
-        ),
-      );
-      return;
-    }
-
-    setState(() => _updatingUserIds.add(userId));
-
-    try {
-      await ApiService.updateUserApproval(
-        userId: userId,
-        approvalStatus: status,
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        for (final item in _users) {
-          if (item is! Map) continue;
-
-          final dynamic itemId = item['id'] ?? item['user_id'];
-
-          if (itemId.toString() == userId.toString()) {
-            item['approval_status'] = status;
-            break;
-          }
-        }
-
-        _updatingUserIds.remove(userId);
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            status == 'Approved'
-                ? 'Account approved successfully.'
-                : 'Account rejected successfully.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-
-      setState(() => _updatingUserIds.remove(userId));
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error.toString().replaceFirst('Exception: ', ''),
-          ),
-        ),
-      );
-    }
-  }
-
-  Color _statusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'approved':
-        return adminGreen;
-      case 'pending':
-        return adminAmber;
-      case 'rejected':
-        return adminRed;
-      default:
-        return adminSecondary;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final visibleUsers = _filteredUsers;
+    final users = [
+      (
+        'Reporter',
+        'reporter@triagedesk.com',
+        Icons.person_outline,
+        adminBlue,
+      ),
+      (
+        'Technician',
+        'technician@triagedesk.com',
+        Icons.support_agent,
+        adminGreen,
+      ),
+      (
+        'Administrator',
+        'admin@triagedesk.com',
+        Icons.admin_panel_settings_outlined,
+        const Color(0xFF7C3AED),
+      ),
+    ];
 
     return Scaffold(
       backgroundColor: adminBackground,
