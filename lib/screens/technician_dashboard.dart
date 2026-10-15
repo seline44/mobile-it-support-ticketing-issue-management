@@ -384,7 +384,7 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                  children: <Widget>[
 
                     Text(
                       ticket.title,
