@@ -5,9 +5,10 @@ from admin import router as admin_router
 
 from auth import router as auth_router
 from tickets import router as tickets_router
+from whatsapp import router as whatsapp_router
 from fastapi.responses import HTMLResponse
 from fastapi import Request
-
+from fastapi.middleware.cors import CORSMiddleware
 
 
 
@@ -16,6 +17,17 @@ app = FastAPI(
     title="TriageDesk API",
     description="Backend API for the TriageDesk IT Support Ticketing System",
     version="1.0.0",
+)
+
+app.add_middleware(
+  CORSMiddleware,
+  allow_origins=[
+    "http://localhost:61209",
+    "http://127.0.0.1:61209",
+  ],
+  allow_credentials=True,
+  allow_methods=["*"],
+  allow_headers=["*"],
 )
 @app.get("/reset-password", response_class=HTMLResponse)
 def reset_password_page():
@@ -35,9 +47,9 @@ def reset_password_page():
           display: flex;
           align-items: center;
           justify-content: center;
-          background: #f5f7fa;
+          background: #fffdf5;
           font-family: Arial, sans-serif;
-          color: #172033;
+          color: #3d0a11;
         }
         .card {
           width: 100%;
@@ -46,25 +58,29 @@ def reset_password_page():
           padding: 32px;
           background: white;
           border-radius: 18px;
-          box-shadow: 0 8px 30px rgba(18, 53, 91, 0.10);
+          box-shadow: 0 8px 30px rgba(128, 0, 32, 0.12);
         }
-        h1 { color: #12355b; margin-top: 0; }
-        p { color: #667085; line-height: 1.5; }
+        h1 { color: #800020; margin-top: 0; }
+        p { color: #80545b; line-height: 1.5; }
         label { display: block; margin-top: 18px; font-weight: bold; }
         input {
           width: 100%;
           box-sizing: border-box;
           padding: 13px;
           margin-top: 8px;
-          border: 1px solid #d0d5dd;
+          border: 1px solid #f1d4d7;
           border-radius: 9px;
           font-size: 15px;
+        }
+        input:focus {
+          outline: 2px solid #800020;
+          outline-offset: 1px;
         }
         button {
           width: 100%;
           padding: 14px;
           margin-top: 24px;
-          background: #12355b;
+          background: #800020;
           color: white;
           border: 0;
           border-radius: 9px;
@@ -72,6 +88,7 @@ def reset_password_page():
           font-weight: bold;
           cursor: pointer;
         }
+        button:hover:not(:disabled) { background: #a52a2a; }
         button:disabled { opacity: 0.6; cursor: wait; }
         #message { margin-top: 18px; overflow-wrap: anywhere; }
       </style>
@@ -201,6 +218,7 @@ def reset_password_page():
 app.include_router(auth_router)
 app.include_router(tickets_router)
 app.include_router(admin_router)
+app.include_router(whatsapp_router)
 
 
 @app.get("/")

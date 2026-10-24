@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from auth import get_current_user, require_roles
@@ -11,11 +12,12 @@ from models import Ticket, TicketHistory, TicketNote, User
 from schemas import (
     NoteCreate,
     NoteResponse,
+    ReopenRequest,
     StatusUpdate,
     TicketCreate,
+    TicketHistoryResponse,
     TicketResponse,
 )
-from sqlalchemy import or_
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
@@ -25,8 +27,6 @@ VALID_STATUSES = {"Open", "In Progress", "Pending", "Resolved"}
 
 
 def calculate_priority(impact: str, urgency: str) -> str:
-    # Initial rule-based priority; we can later implement
-    # configurable weights and SLA risk scoring.
     scores = {
         ("Low", "Low"): "Low",
         ("Low", "Medium"): "Low",
@@ -81,6 +81,55 @@ def record_history(
     )
 
 
+def serialize_ticket(db: Session, ticket: Ticket) -> dict:
+    """Build a ticket response including technician and last-editor names."""
+    assigned_name = None
+    if ticket.assigned_technician_id is not None:
+        technician = db.get(User, ticket.assigned_technician_id)
+        if technician is not None:
+            assigned_name = technician.full_name
+
+    last_history = (
+        db.query(TicketHistory)
+        .filter(TicketHistory.ticket_id == ticket.id)
+        .order_by(TicketHistory.created_at.desc(), TicketHistory.id.desc())
+        .first()
+    )
+
+    last_editor_name = None
+    last_modified_at = ticket.updated_at
+
+    if last_history is not None:
+        last_modified_at = last_history.created_at
+        if last_history.actor_id is not None:
+            editor = db.get(User, last_history.actor_id)
+            if editor is not None:
+                last_editor_name = editor.full_name
+
+    return {
+        "id": ticket.id,
+        "ticket_number": ticket.ticket_number,
+        "title": ticket.title,
+        "description": ticket.description,
+        "category": ticket.category,
+        "impact": ticket.impact,
+        "urgency": ticket.urgency,
+        "priority": ticket.priority,
+        "device": ticket.device,
+        "location": ticket.location,
+        "status": ticket.status,
+        "resolution": ticket.resolution,
+        "reporter_id": ticket.reporter_id,
+        "assigned_technician_id": ticket.assigned_technician_id,
+        "assigned_technician_name": assigned_name,
+        "last_modified_by_name": last_editor_name,
+        "last_modified_at": last_modified_at,
+        "created_at": ticket.created_at,
+        "updated_at": ticket.updated_at,
+        "resolved_at": ticket.resolved_at,
+    }
+
+
 @router.post("", response_model=TicketResponse, status_code=201)
 def create_ticket(
     request: TicketCreate,
@@ -110,18 +159,12 @@ def create_ticket(
     try:
         db.add(ticket)
         db.flush()
-
         record_history(
-            db,
-            ticket,
-            user.id,
-            "Ticket created",
-            new_status="Open",
+            db, ticket, user.id, "Ticket created", new_status="Open"
         )
-
         db.commit()
         db.refresh(ticket)
-        return ticket
+        return serialize_ticket(db, ticket)
     except Exception:
         db.rollback()
         raise
@@ -138,15 +181,15 @@ def list_tickets(
     if user.role == "Reporter":
         query = query.filter(Ticket.reporter_id == user.id)
     elif user.role == "Technician":
-             query = query.filter(
-             or_(
-            Ticket.assigned_technician_id == user.id,
-            (
-                (Ticket.status == "Open")
-                & (Ticket.assigned_technician_id.is_(None))
-            ),
+        query = query.filter(
+            or_(
+                Ticket.assigned_technician_id == user.id,
+                (
+                    (Ticket.status == "Open")
+                    & (Ticket.assigned_technician_id.is_(None))
+                ),
+            )
         )
-    )
     elif user.role != "Administrator":
         raise HTTPException(status_code=403, detail="Role not permitted")
 
@@ -155,7 +198,8 @@ def list_tickets(
             raise HTTPException(status_code=422, detail="Invalid status")
         query = query.filter(Ticket.status == status)
 
-    return query.order_by(Ticket.created_at.desc()).all()
+    tickets = query.order_by(Ticket.created_at.desc()).all()
+    return [serialize_ticket(db, ticket) for ticket in tickets]
 
 
 @router.get("/{ticket_id}", response_model=TicketResponse)
@@ -166,7 +210,7 @@ def get_ticket(
 ):
     ticket = get_ticket_or_404(db, ticket_id)
     check_ticket_access(ticket, user)
-    return ticket
+    return serialize_ticket(db, ticket)
 
 
 @router.post("/{ticket_id}/accept", response_model=TicketResponse)
@@ -199,7 +243,7 @@ def accept_ticket(
 
     db.commit()
     db.refresh(ticket)
-    return ticket
+    return serialize_ticket(db, ticket)
 
 
 @router.patch("/{ticket_id}/status", response_model=TicketResponse)
@@ -225,8 +269,20 @@ def update_ticket_status(
     ticket.status = request.status
     ticket.updated_at = datetime.now(timezone.utc)
 
+    history_details = None
+
     if request.status == "Resolved":
         ticket.resolved_at = datetime.now(timezone.utc)
+
+        if request.resolution is not None:
+            resolution = request.resolution.strip()
+            if not resolution:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Resolution cannot be empty",
+                )
+            ticket.resolution = resolution
+            history_details = f"Resolution: {resolution}"
     else:
         ticket.resolved_at = None
 
@@ -237,11 +293,96 @@ def update_ticket_status(
         "Status changed",
         old_status=old_status,
         new_status=ticket.status,
+        details=history_details,
     )
 
     db.commit()
     db.refresh(ticket)
-    return ticket
+    return serialize_ticket(db, ticket)
+
+
+@router.post("/{ticket_id}/reopen", response_model=TicketResponse)
+def reopen_ticket(
+    ticket_id: int,
+    request: ReopenRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("Reporter")),
+):
+    ticket = get_ticket_or_404(db, ticket_id)
+
+    # Reporters may reopen only their own tickets.
+    if ticket.reporter_id != user.id:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if ticket.status != "Resolved":
+        raise HTTPException(
+            status_code=409,
+            detail="Only resolved tickets can be reopened",
+        )
+
+    reason = request.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="Please provide a reopening reason",
+        )
+
+    old_status = ticket.status
+    ticket.status = "Open"
+    ticket.resolved_at = None
+    ticket.assigned_technician_id = None
+    ticket.updated_at = datetime.now(timezone.utc)
+
+    # Keep the previous resolution for reference.
+    record_history(
+        db,
+        ticket,
+        user.id,
+        "Ticket reopened",
+        old_status=old_status,
+        new_status="Open",
+        details=f"Reporter reopening reason: {reason}",
+    )
+
+    db.commit()
+    db.refresh(ticket)
+    return serialize_ticket(db, ticket)
+
+
+@router.get(
+    "/{ticket_id}/history",
+    response_model=list[TicketHistoryResponse],
+)
+def list_ticket_history(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    ticket = get_ticket_or_404(db, ticket_id)
+    check_ticket_access(ticket, user)
+
+    rows = (
+        db.query(TicketHistory, User.full_name)
+        .outerjoin(User, TicketHistory.actor_id == User.id)
+        .filter(TicketHistory.ticket_id == ticket.id)
+        .order_by(TicketHistory.created_at.asc(), TicketHistory.id.asc())
+        .all()
+    )
+
+    return [
+        {
+            "id": history.id,
+            "ticket_id": history.ticket_id,
+            "actor_id": history.actor_id,
+            "actor_name": actor_name,
+            "action": history.action,
+            "old_status": history.old_status,
+            "new_status": history.new_status,
+            "details": history.details,
+            "created_at": history.created_at,
+        }
+        for history, actor_name in rows
+    ]
 
 
 @router.post(
@@ -258,14 +399,15 @@ def add_ticket_note(
     ticket = get_ticket_or_404(db, ticket_id)
     check_ticket_access(ticket, user)
 
+    note_text = request.note.strip()
+    if not note_text:
+        raise HTTPException(status_code=422, detail="Note cannot be empty")
+
     note = TicketNote(
         ticket_id=ticket.id,
         author_id=user.id,
-        note=request.note.strip(),
+        note=note_text,
     )
-
-    if not note.note:
-        raise HTTPException(status_code=422, detail="Note cannot be empty")
 
     try:
         db.add(note)
@@ -285,7 +427,10 @@ def add_ticket_note(
         raise
 
 
-@router.get("/{ticket_id}/notes", response_model=list[NoteResponse])
+@router.get(
+    "/{ticket_id}/notes",
+    response_model=list[NoteResponse],
+)
 def list_ticket_notes(
     ticket_id: int,
     db: Session = Depends(get_db),

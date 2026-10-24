@@ -22,7 +22,7 @@ load_dotenv()
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not SECRET_KEY:
-    raise RuntimeError("JWT_SECRET_KEY is missing from the backend .env file")
+    raise RuntimeError("JWT_SECRET_KEY is missing from the backend environment.")
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 30
@@ -285,10 +285,11 @@ def forgot_password(
         )
 
     # Set this in .env to the URL of the Flutter reset screen.
-    reset_url = os.getenv(
-        "PASSWORD_RESET_URL",
-        "http://localhost:8000/reset-password",
+    reset_url = (
+        os.getenv("PASSWORD_RESET_URL")
+        or os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8000")
     )
+    reset_url = f"{reset_url.rstrip('/')}/reset-password"
     link = f"{reset_url}?{urlencode({'token': token})}"
 
     try:
