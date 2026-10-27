@@ -53,11 +53,9 @@ Add these environment variables to the web service in the Render dashboard:
 | `PYTHON_VERSION` | `3.13.14` (the Python version used to validate this backend) |
 | `DATABASE_URL` | Internal connection string from the migrated Render PostgreSQL database |
 | `JWT_SECRET_KEY` | A new, randomly generated secret |
-| `WHATSAPP_VERIFY_TOKEN` | A new, private webhook verification token |
-| `WHATSAPP_APP_SECRET` | The rotated Meta app secret |
-| `WHATSAPP_ACCESS_TOKEN` | The rotated WhatsApp Cloud API access token |
-| `WHATSAPP_PHONE_NUMBER_ID` | The WhatsApp Business phone-number ID |
-| `WHATSAPP_GRAPH_API_VERSION` | A Graph API version supported by the Meta app |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
+| `TWILIO_WHATSAPP_FROM` | Your Twilio WhatsApp sender, in `whatsapp:+<E.164 number>` format |
 
 Enter secret values directly in Render's environment settings. Do not put them
 in `render.yaml`, source code, or Git. The startup command creates any missing tables and applies the existing
@@ -65,31 +63,31 @@ resolution-column migration before starting FastAPI. Use a service plan that
 remains available for production webhooks; free services can sleep and delay
 webhook responses.
 
-After deployment, verify the service's `/` endpoint responds. Use
-`https://<your-render-service>.onrender.com/webhooks/whatsapp` as the Meta
-callback URL, enter the same `WHATSAPP_VERIFY_TOKEN` in Meta, and subscribe to
-the `messages` field. Configure SMTP variables separately if password-reset
-email delivery is needed.
+After deployment, verify the service's `/` endpoint responds. Configure the
+Twilio WhatsApp sender's incoming-message webhook to
+`https://<your-render-service>.onrender.com/webhooks/whatsapp` using `POST`.
+Configure SMTP variables separately if password-reset email delivery is
+needed.
 
-## WhatsApp Cloud API setup
+## Twilio WhatsApp setup
 
 The WhatsApp webhook is available at `/webhooks/whatsapp`. Configure the
-following in the backend `.env` file; never commit the access token, app
-secret, or verify token:
+following in the backend `.env` file; never commit the Twilio credentials:
 
 ```dotenv
-WHATSAPP_VERIFY_TOKEN=choose-a-long-random-value
-WHATSAPP_APP_SECRET=your-meta-app-secret
-WHATSAPP_ACCESS_TOKEN=your-whatsapp-cloud-api-access-token
-WHATSAPP_PHONE_NUMBER_ID=your-whatsapp-phone-number-id
-WHATSAPP_GRAPH_API_VERSION=v23.0
+TWILIO_ACCOUNT_SID=your-twilio-account-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 ```
 
-Set `WHATSAPP_GRAPH_API_VERSION` to a Graph API version currently supported by
-your Meta app. The webhook must be publicly reachable over HTTPS for Meta to
-deliver messages. In the Meta webhook configuration, use
-`https://<your-domain>/webhooks/whatsapp` and the same verify token as
-`WHATSAPP_VERIFY_TOKEN`, then subscribe to the `messages` field.
+Use your actual Twilio WhatsApp sender in place of the example above. For
+initial testing, you can use the Twilio WhatsApp Sandbox and its sender
+number; production use requires an approved WhatsApp sender. In the Twilio
+Console, configure the sender's **A message comes in** webhook as
+`https://<your-domain>/webhooks/whatsapp` with the HTTP method set to `POST`.
+The webhook must be publicly reachable over HTTPS. Incoming requests are
+authenticated using Twilio's `X-Twilio-Signature`; do not disable signature
+validation.
 
 Create the new WhatsApp tables in the configured database before using the
 webhook:
@@ -118,9 +116,8 @@ Reporters can send a text message describing their issue. TriageDesk then
 collects category, impact, and urgency in the WhatsApp conversation, creates
 the ticket in the existing database, and replies with its ticket number and
 priority. Send `CANCEL` to stop an in-progress ticket conversation. Duplicate
-Meta webhook deliveries are handled idempotently.
+Twilio webhook deliveries are handled idempotently.
 
-The API verifies webhook signatures using `WHATSAPP_APP_SECRET`; do not disable
-signature verification. The current milestone sends ticket conversation
-replies to the Reporter. Technician notifications and technician status
-updates through WhatsApp are not part of this milestone.
+The current milestone sends ticket conversation replies to the Reporter.
+Technician notifications and technician status updates through WhatsApp are
+not part of this milestone.

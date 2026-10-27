@@ -1,18 +1,17 @@
-import hashlib
-import hmac
-import json
 import os
 import re
-import urllib.error
-import urllib.request
+from urllib.parse import parse_qsl
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from requests.exceptions import RequestException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
+from twilio.base.exceptions import TwilioException
+from twilio.request_validator import RequestValidator
+from twilio.rest import Client
 
 from database import get_db
 from models import (
@@ -42,15 +41,14 @@ GREETING_MESSAGES = {"hi", "hello", "hey", "start", "ticket", "new ticket", "hel
 MAX_DESCRIPTION_LENGTH = 4000
 
 
-def verify_webhook_signature(body: bytes, signature: str | None) -> bool:
-    app_secret = os.getenv("WHATSAPP_APP_SECRET")
-    if not app_secret or not signature or not signature.startswith("sha256="):
+def verify_webhook_signature(
+    url: str, params: dict[str, str], signature: str | None
+) -> bool:
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    if not auth_token or not signature:
         return False
 
-    expected = hmac.new(
-        app_secret.encode("utf-8"), body, hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(signature.removeprefix("sha256="), expected)
+    return RequestValidator(auth_token).validate(url, params, signature)
 
 
 def normalize_phone_number(phone_number: str) -> str:
@@ -61,46 +59,27 @@ def normalize_phone_number(phone_number: str) -> str:
 
 
 def send_whatsapp_text(phone_number: str, text: str) -> None:
-    access_token = os.getenv("WHATSAPP_ACCESS_TOKEN")
-    phone_number_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
-    api_version = os.getenv("WHATSAPP_GRAPH_API_VERSION", "v23.0")
-    if not access_token or not phone_number_id:
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_number = os.getenv("TWILIO_WHATSAPP_FROM")
+    if not account_sid or not auth_token or not from_number:
         raise RuntimeError(
-            "WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID must be configured."
+            "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and "
+            "TWILIO_WHATSAPP_FROM must be configured."
         )
-    if not re.fullmatch(r"v\d+\.\d+", api_version):
-        raise RuntimeError("WHATSAPP_GRAPH_API_VERSION must look like v23.0.")
-
-    payload = json.dumps(
-        {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": phone_number.lstrip("+"),
-            "type": "text",
-            "text": {"preview_url": False, "body": text},
-        }
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            if response.status < 200 or response.status >= 300:
-                raise RuntimeError(
-                    f"WhatsApp Cloud API returned HTTP {response.status}."
-                )
-    except urllib.error.HTTPError as error:
+    if not re.fullmatch(r"whatsapp:\+[1-9]\d{7,14}", from_number):
         raise RuntimeError(
-            f"WhatsApp Cloud API returned HTTP {error.code}."
-        ) from error
-    except urllib.error.URLError as error:
-        raise RuntimeError("Could not reach the WhatsApp Cloud API.") from error
+            "TWILIO_WHATSAPP_FROM must be a WhatsApp sender in whatsapp:+E.164 format."
+        )
+
+    try:
+        Client(account_sid, auth_token).messages.create(
+            from_=from_number,
+            to=f"whatsapp:{normalize_phone_number(phone_number)}",
+            body=text,
+        )
+    except (TwilioException, RequestException) as error:
+        raise RuntimeError("Twilio could not deliver the WhatsApp reply.") from error
 
 
 def _create_ticket(
@@ -302,116 +281,77 @@ def process_incoming_message(
     return response_text
 
 
-@router.get("", response_class=PlainTextResponse)
-def verify_webhook(
-    mode: str | None = Query(default=None, alias="hub.mode"),
-    verify_token: str | None = Query(default=None, alias="hub.verify_token"),
-    challenge: str | None = Query(default=None, alias="hub.challenge"),
-):
-    expected_token = os.getenv("WHATSAPP_VERIFY_TOKEN")
-    if not expected_token:
-        raise HTTPException(
-            status_code=503,
-            detail="WHATSAPP_VERIFY_TOKEN is not configured.",
-        )
-    if mode != "subscribe" or not hmac.compare_digest(
-        verify_token or "", expected_token
-    ):
-        raise HTTPException(status_code=403, detail="Webhook verification failed.")
-    return challenge or ""
-
-
 @router.post("")
 async def receive_webhook(
     request: Request,
-    x_hub_signature_256: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    raw_body = await request.body()
-    if not os.getenv("WHATSAPP_APP_SECRET"):
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    if not auth_token:
         raise HTTPException(
             status_code=503,
-            detail="WHATSAPP_APP_SECRET is not configured.",
+            detail="TWILIO_AUTH_TOKEN is not configured.",
         )
-    if not verify_webhook_signature(raw_body, x_hub_signature_256):
-        raise HTTPException(status_code=401, detail="Invalid webhook signature.")
 
+    raw_body = await request.body()
     try:
-        payload = json.loads(raw_body)
-    except json.JSONDecodeError as error:
+        form_data = parse_qsl(raw_body.decode("utf-8"), keep_blank_values=True)
+    except UnicodeDecodeError as error:
         raise HTTPException(
-            status_code=400, detail="Webhook body must contain valid JSON."
+            status_code=400, detail="Webhook body must be URL-encoded form data."
         ) from error
-
-    if not isinstance(payload, dict):
+    params = dict(form_data)
+    signature = request.headers.get("X-Twilio-Signature")
+    if not verify_webhook_signature(str(request.url), params, signature):
         raise HTTPException(
-            status_code=400, detail="Webhook body must be a JSON object."
+            status_code=401, detail="Invalid webhook signature."
         )
 
-    messages = []
-    entries = payload.get("entry", [])
-    if not isinstance(entries, list):
+    message_id = params.get("MessageSid")
+    sender_number = params.get("From")
+    if not message_id or not sender_number:
         raise HTTPException(
-            status_code=400, detail="Webhook entry must be a JSON array."
+            status_code=400,
+            detail="Webhook must include MessageSid and From.",
         )
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        changes = entry.get("changes", [])
-        if not isinstance(changes, list):
-            continue
-        for change in changes:
-            if not isinstance(change, dict):
-                continue
-            value = change.get("value", {})
-            if not isinstance(value, dict):
-                continue
-            incoming_messages = value.get("messages", [])
-            if isinstance(incoming_messages, list):
-                messages.extend(incoming_messages)
 
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
-        message_id = message.get("id")
-        sender_number = message.get("from")
-        if not isinstance(message_id, str) or not isinstance(sender_number, str):
-            continue
-
-        message_type = message.get("type", "")
-        text = message.get("text", {})
-        body = text.get("body", "") if isinstance(text, dict) else ""
-        try:
-            response_text = await run_in_threadpool(
-                process_incoming_message,
-                db,
-                message_id,
-                sender_number,
-                message_type,
-                body if isinstance(body, str) else "",
-            )
-            await run_in_threadpool(
-                send_whatsapp_text, sender_number, response_text
-            )
-        except IntegrityError:
-            db.rollback()
-            duplicate = db.get(WhatsAppMessage, message_id)
-            if duplicate is None:
-                raise
-            await run_in_threadpool(
-                send_whatsapp_text,
-                sender_number,
-                duplicate.response_text,
-            )
-        except RuntimeError as error:
-            raise HTTPException(
-                status_code=502,
-                detail="WhatsApp message processing or reply delivery failed.",
-            ) from error
-        except ValueError as error:
-            raise HTTPException(
-                status_code=400,
-                detail="WhatsApp sender number is invalid.",
-            ) from error
+    media_count = params.get("NumMedia", "0") or "0"
+    if not media_count.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook NumMedia must be a non-negative integer.",
+        )
+    message_type = "media" if int(media_count) > 0 else "text"
+    body = params.get("Body", "")
+    try:
+        response_text = await run_in_threadpool(
+            process_incoming_message,
+            db,
+            message_id,
+            sender_number,
+            message_type,
+            body,
+        )
+        await run_in_threadpool(send_whatsapp_text, sender_number, response_text)
+    except IntegrityError:
+        db.rollback()
+        duplicate = db.get(WhatsAppMessage, message_id)
+        if duplicate is None:
+            raise
+        await run_in_threadpool(
+            send_whatsapp_text,
+            sender_number,
+            duplicate.response_text,
+        )
+    except RuntimeError as error:
+        raise HTTPException(
+            status_code=502,
+            detail="WhatsApp message processing or reply delivery failed.",
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail="WhatsApp sender number is invalid.",
+        ) from error
 
     return {"status": "ok"}
