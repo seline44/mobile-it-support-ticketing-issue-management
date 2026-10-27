@@ -6,13 +6,12 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Request
-from requests.exceptions import RequestException
+from fastapi.responses import Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
-from twilio.base.exceptions import TwilioException
 from twilio.request_validator import RequestValidator
-from twilio.rest import Client
+from twilio.twiml.messaging_response import MessagingResponse
 
 from database import get_db
 from models import (
@@ -61,28 +60,10 @@ def normalize_phone_number(phone_number: str) -> str:
     return f"+{digits}"
 
 
-def send_whatsapp_text(phone_number: str, text: str) -> None:
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-    from_number = os.getenv("TWILIO_WHATSAPP_FROM")
-    if not account_sid or not auth_token or not from_number:
-        raise RuntimeError(
-            "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and "
-            "TWILIO_WHATSAPP_FROM must be configured."
-        )
-    if not re.fullmatch(r"whatsapp:\+[1-9]\d{7,14}", from_number):
-        raise RuntimeError(
-            "TWILIO_WHATSAPP_FROM must be a WhatsApp sender in whatsapp:+E.164 format."
-        )
-
-    try:
-        Client(account_sid, auth_token).messages.create(
-            from_=from_number,
-            to=f"whatsapp:{normalize_phone_number(phone_number)}",
-            body=text,
-        )
-    except (TwilioException, RequestException) as error:
-        raise RuntimeError("Twilio could not deliver the WhatsApp reply.") from error
+def whatsapp_twiml_response(text: str) -> Response:
+    twiml = MessagingResponse()
+    twiml.message(text)
+    return Response(content=str(twiml), media_type="application/xml")
 
 
 def _create_ticket(
@@ -335,22 +316,17 @@ async def receive_webhook(
             message_type,
             body,
         )
-        await run_in_threadpool(send_whatsapp_text, sender_number, response_text)
     except IntegrityError:
         db.rollback()
         duplicate = db.get(WhatsAppMessage, message_id)
         if duplicate is None:
             raise
-        await run_in_threadpool(
-            send_whatsapp_text,
-            sender_number,
-            duplicate.response_text,
-        )
+        response_text = duplicate.response_text
     except RuntimeError as error:
-        logger.exception("WhatsApp webhook processing or reply delivery failed.")
+        logger.exception("WhatsApp webhook conversation processing failed.")
         raise HTTPException(
             status_code=502,
-            detail="WhatsApp message processing or reply delivery failed.",
+            detail="WhatsApp message processing failed.",
         ) from error
     except ValueError as error:
         raise HTTPException(
@@ -358,4 +334,4 @@ async def receive_webhook(
             detail="WhatsApp sender number is invalid.",
         ) from error
 
-    return {"status": "ok"}
+    return whatsapp_twiml_response(response_text)

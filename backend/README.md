@@ -53,9 +53,7 @@ Add these environment variables to the web service in the Render dashboard:
 | `PYTHON_VERSION` | `3.13.14` (the Python version used to validate this backend) |
 | `DATABASE_URL` | Internal connection string from the migrated Render PostgreSQL database |
 | `JWT_SECRET_KEY` | A new, randomly generated secret |
-| `TWILIO_ACCOUNT_SID` | Twilio Account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
-| `TWILIO_WHATSAPP_FROM` | Your Twilio WhatsApp sender, in `whatsapp:+<E.164 number>` format |
 
 Enter secret values directly in Render's environment settings. Do not put them
 in `render.yaml`, source code, or Git. The startup command creates any missing tables and applies the existing
@@ -75,19 +73,20 @@ The WhatsApp webhook is available at `/webhooks/whatsapp`. Configure the
 following in the backend `.env` file; never commit the Twilio credentials:
 
 ```dotenv
-TWILIO_ACCOUNT_SID=your-twilio-account-sid
 TWILIO_AUTH_TOKEN=your-twilio-auth-token
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 ```
 
-Use your actual Twilio WhatsApp sender in place of the example above. For
-initial testing, you can use the Twilio WhatsApp Sandbox and its sender
-number; production use requires an approved WhatsApp sender. In the Twilio
+For initial testing, you can use the Twilio WhatsApp Sandbox; production use
+requires an approved WhatsApp sender. In the Twilio
 Console, configure the sender's **A message comes in** webhook as
 `https://<your-domain>/webhooks/whatsapp` with the HTTP method set to `POST`.
 The webhook must be publicly reachable over HTTPS. Incoming requests are
 authenticated using Twilio's `X-Twilio-Signature`; do not disable signature
 validation.
+Replies are returned directly as TwiML from the incoming-message webhook, so
+the app does not need the Twilio Account SID or sender number configured.
+Free-form replies are supported during WhatsApp's 24-hour customer service
+window after a Reporter messages the Sandbox.
 
 Create the new WhatsApp tables in the configured database before using the
 webhook:
