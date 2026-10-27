@@ -4,7 +4,7 @@ import unittest
 from urllib.parse import urlencode
 from unittest.mock import patch
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from requests.exceptions import ConnectionError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -215,6 +215,52 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             "+15551234567",
         )
         send_message.assert_called_once()
+
+    def test_webhook_logs_processing_failure_without_changing_response(self):
+        auth_token = "test-auth-token"
+        url = "https://example.test/webhooks/whatsapp"
+        params = {
+            "MessageSid": "SM123",
+            "From": "whatsapp:+15551234567",
+            "NumMedia": "0",
+            "Body": "Printer is not working.",
+        }
+        signature = RequestValidator(auth_token).compute_signature(url, params)
+        body = urlencode(params).encode("utf-8")
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "scheme": "https",
+            "server": ("example.test", 443),
+            "path": "/webhooks/whatsapp",
+            "query_string": b"",
+            "headers": [
+                (b"host", b"example.test"),
+                (b"x-twilio-signature", signature.encode("ascii")),
+            ],
+        }
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def fail_in_threadpool(function, *args):
+            raise RuntimeError("Twilio could not deliver the WhatsApp reply.")
+
+        request = Request(scope, receive)
+        with (
+            patch.dict(os.environ, {"TWILIO_AUTH_TOKEN": auth_token}),
+            patch("whatsapp.run_in_threadpool", side_effect=fail_in_threadpool),
+            self.assertLogs("whatsapp", level="ERROR") as captured,
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(receive_webhook(request, self.db))
+
+        self.assertEqual(raised.exception.status_code, 502)
+        self.assertIn(
+            "WhatsApp webhook processing or reply delivery failed.",
+            captured.output[0],
+        )
+        self.assertIn("Twilio could not deliver", captured.output[0])
 
 
 if __name__ == "__main__":

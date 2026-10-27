@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from urllib.parse import parse_qsl
@@ -24,6 +25,8 @@ from models import (
 from tickets import calculate_priority, record_history
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks/whatsapp", tags=["WhatsApp"])
 
@@ -344,6 +347,7 @@ async def receive_webhook(
             duplicate.response_text,
         )
     except RuntimeError as error:
+        logger.exception("WhatsApp webhook processing or reply delivery failed.")
         raise HTTPException(
             status_code=502,
             detail="WhatsApp message processing or reply delivery failed.",
