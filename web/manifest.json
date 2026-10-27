@@ -1,11 +1,11 @@
 {
-    "name": "triagedesk",
-    "short_name": "triagedesk",
+    "name": "TriageDesk",
+    "short_name": "TriageDesk",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F4F6F5",
+    "theme_color": "#252B30",
+    "description": "TriageDesk IT support and ticket management.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

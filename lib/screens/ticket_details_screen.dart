@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-class TicketDetailsScreen extends StatelessWidget {
+import '../theme/app_theme.dart';
+
+class TicketDetailsScreen extends StatefulWidget {
   final String id;
   final String title;
   final String description;
@@ -24,17 +26,40 @@ class TicketDetailsScreen extends StatelessWidget {
     required this.status,
   });
 
-  static const Color navy = Color(0xFF12355B);
-  static const Color blue = Color(0xFF2563EB);
-  static const Color background = Color(0xFFF5F7FA);
-  static const Color textPrimary = Color(0xFF172033);
-  static const Color textSecondary = Color(0xFF667085);
-  static const Color success = Color(0xFF16A34A);
-  static const Color warning = Color(0xFFF59E0B);
+  @override
+  State<TicketDetailsScreen> createState() => _TicketDetailsScreenState();
+}
+
+class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
+  final TextEditingController _commentController = TextEditingController();
+  final List<Map<String, String>> _updates = [
+    {
+      'title': 'Your request has been received',
+      'time': 'Today, 10:24 AM',
+    },
+    {
+      'title': 'IT team is investigating the issue',
+      'time': 'Today, 11:05 AM',
+    },
+    {
+      'title': 'Still working on it',
+      'time': 'Today, 11:45 AM',
+    },
+  ];
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  static const Color blue = AppTheme.accentTeal;
+  static const Color success = AppTheme.accentTeal;
+  static const Color warning = AppTheme.warningGold;
   static const Color danger = Color(0xFFDC2626);
 
   Color _statusColor() {
-    switch (status.toLowerCase()) {
+    switch (widget.status.toLowerCase()) {
       case 'resolved':
       case 'closed':
         return success;
@@ -47,413 +72,359 @@ class TicketDetailsScreen extends StatelessWidget {
   }
 
   Color _priorityColor() {
-    if (impact.toLowerCase() == 'critical' ||
-        urgency.toLowerCase() == 'critical') {
+    if (widget.impact.toLowerCase() == 'critical' ||
+        widget.urgency.toLowerCase() == 'critical') {
       return danger;
     }
-
-    if (urgency.toLowerCase() == 'high') {
+    if (widget.urgency.toLowerCase() == 'high' ||
+        widget.impact.toLowerCase() == 'high') {
       return warning;
     }
-
     return blue;
   }
 
   String _calculatedPriority() {
-    if (impact.toLowerCase() == 'critical' ||
-        urgency.toLowerCase() == 'critical') {
+    if (widget.impact.toLowerCase() == 'critical' ||
+        widget.urgency.toLowerCase() == 'critical') {
       return 'Critical';
     }
-
-    if (impact.toLowerCase() == 'high' ||
-        urgency.toLowerCase() == 'high') {
+    if (widget.impact.toLowerCase() == 'high' ||
+        widget.urgency.toLowerCase() == 'high') {
       return 'High';
     }
-
-    if (impact.toLowerCase() == 'medium' ||
-        urgency.toLowerCase() == 'medium') {
+    if (widget.impact.toLowerCase() == 'medium' ||
+        widget.urgency.toLowerCase() == 'medium') {
       return 'Medium';
     }
-
     return 'Low';
+  }
+
+  IconData _categoryIcon() {
+    switch (widget.category.toLowerCase()) {
+      case 'hardware':
+        return Icons.devices_outlined;
+      case 'software':
+        return Icons.apps_outlined;
+      case 'network':
+        return Icons.wifi_rounded;
+      case 'email':
+        return Icons.email_outlined;
+      case 'account access':
+        return Icons.lock_outline_rounded;
+      case 'printer':
+      case 'printing':
+        return Icons.print_outlined;
+      default:
+        return Icons.laptop_mac_outlined;
+    }
+  }
+
+  void _addComment() {
+    final comment = _commentController.text.trim();
+    if (comment.isEmpty) return;
+
+    setState(() {
+      _updates.add({
+        'title': comment,
+        'time': 'Just now',
+      });
+      _commentController.clear();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Comment added successfully'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textPrimary = theme.colorScheme.onSurface;
+    final textSecondary = theme.colorScheme.onSurfaceVariant;
+    final cardColor = theme.cardColor;
+    final borderColor = theme.colorScheme.outlineVariant;
+
     final statusColor = _statusColor();
     final priority = _calculatedPriority();
     final priorityColor = _priorityColor();
 
     return Scaffold(
-      backgroundColor: background,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: navy,
-        foregroundColor: Colors.white,
-        elevation: 0,
         title: const Text(
           'Ticket Details',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
         ),
+        actions: [
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.more_vert_rounded),
+            tooltip: 'Options',
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Ticket ID and status
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  id,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: textSecondary,
-                  ),
-                ),
-                _statusBadge(status, statusColor),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Ticket title
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.bold,
-                color: textPrimary,
-                height: 1.2,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // Category
-            Row(
-              children: [
-                const Icon(
-                  Icons.category_outlined,
-                  size: 18,
-                  color: textSecondary,
-                ),
-                const SizedBox(width: 7),
-                Text(
-                  category,
-                  style: const TextStyle(
-                    color: textSecondary,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 22),
-
-            // Priority card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Colors.grey.shade200,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: priorityColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.priority_high_rounded,
-                      color: priorityColor,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'System Priority',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          priority,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: priorityColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.auto_awesome,
-                    size: 20,
-                    color: blue,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Problem description
-            _sectionTitle('Problem Description'),
-
-            const SizedBox(height: 10),
-
-            _whiteCard(
-              child: Text(
-                description,
-                style: const TextStyle(
-                  fontSize: 15,
-                  height: 1.55,
-                  color: textPrimary,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Ticket information
-            _sectionTitle('Ticket Information'),
-
-            const SizedBox(height: 10),
-
-            _whiteCard(
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _infoRow(
-                    Icons.confirmation_number_outlined,
-                    'Ticket ID',
-                    id,
-                  ),
-                  _divider(),
-                  _infoRow(
-                    Icons.category_outlined,
-                    'Category',
-                    category,
-                  ),
-                  _divider(),
-                  _infoRow(
-                    Icons.speed_outlined,
-                    'Impact',
-                    impact,
-                  ),
-                  _divider(),
-                  _infoRow(
-                    Icons.priority_high_outlined,
-                    'Urgency',
-                    urgency,
-                  ),
-                  _divider(),
-                  _infoRow(
-                    Icons.laptop_mac_outlined,
-                    'Device',
-                    device,
-                  ),
-                  _divider(),
-                  _infoRow(
-                    Icons.location_on_outlined,
-                    'Location',
-                    location,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Activity
-            _sectionTitle('Ticket Activity'),
-
-            const SizedBox(height: 10),
-
-            _whiteCard(
-              child: Column(
-                children: [
+                  // Hero Header Section
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        width: 34,
-                        height: 34,
+                        width: 56,
+                        height: 56,
                         decoration: BoxDecoration(
-                          color: blue.withValues(alpha: 0.12),
+                          color: blue.withValues(alpha: 0.18),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.add,
-                          size: 18,
-                          color: blue,
-                        ),
+                        child: Icon(_categoryIcon(), color: blue, size: 28),
                       ),
-                      const SizedBox(width: 12),
-                      const Expanded(
+                      const SizedBox(width: 16),
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Ticket Created',
+                              widget.title,
                               style: TextStyle(
-                                fontWeight: FontWeight.w600,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
                                 color: textPrimary,
+                                height: 1.25,
                               ),
                             ),
-                            SizedBox(height: 4),
+                            const SizedBox(height: 6),
                             Text(
-                              'Your support request has been submitted successfully.',
+                              widget.id.startsWith('#') ? widget.id : '#${widget.id}',
                               style: TextStyle(
                                 fontSize: 13,
+                                fontWeight: FontWeight.w600,
                                 color: textSecondary,
-                                height: 1.4,
                               ),
                             ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Today',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: textSecondary,
-                              ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    widget.status,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: statusColor,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '2h ago',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: textSecondary,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
                     ],
                   ),
+
+                  const SizedBox(height: 24),
+
+                  // Metadata Info Card
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Column(
+                      children: [
+                        _metaRow('Category', widget.category, textPrimary, textSecondary),
+                        const Divider(height: 20),
+                        _metaRow('Priority', priority, priorityColor, textSecondary, isBold: true),
+                        const Divider(height: 20),
+                        _metaRow('Created', 'Today, 10:24 AM', textPrimary, textSecondary),
+                        const Divider(height: 20),
+                        _metaRow('Assigned to', 'IT Support Team', textPrimary, textSecondary),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  // Updates Timeline Section
+                  Text(
+                    'Updates',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (int i = 0; i < _updates.length; i++)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Column(
+                                children: [
+                                  Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: BoxDecoration(
+                                      color: blue.withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: blue, width: 2),
+                                    ),
+                                    child: Center(
+                                      child: Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          color: blue,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  if (i < _updates.length - 1)
+                                    Container(
+                                      width: 2,
+                                      height: 38,
+                                      color: blue.withValues(alpha: 0.3),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _updates[i]['title']!,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        _updates[i]['time']!,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
+          ),
 
-            const SizedBox(height: 28),
-
-            // Back button
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                icon: const Icon(Icons.arrow_back),
-                label: const Text(
-                  'Back to My Tickets',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: navy,
-                  side: const BorderSide(
-                    color: navy,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _sectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.bold,
-        color: textPrimary,
-      ),
-    );
-  }
-
-  Widget _whiteCard({
-    required Widget child,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.grey.shade200,
-        ),
-      ),
-      child: child,
-    );
-  }
-
-  Widget _infoRow(
-    IconData icon,
-    String label,
-    String value,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
+          // Bottom Comment & Send Bar
           Container(
-            width: 36,
-            height: 36,
+            padding: EdgeInsets.fromLTRB(
+              20,
+              12,
+              20,
+              MediaQuery.of(context).viewInsets.bottom + 12,
+            ),
             decoration: BoxDecoration(
-              color: navy.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
+              color: cardColor,
+              border: Border(top: BorderSide(color: borderColor)),
             ),
-            child: Icon(
-              icon,
-              size: 19,
-              color: navy,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                color: textSecondary,
-              ),
-            ),
-          ),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: textPrimary,
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _commentController,
+                    decoration: InputDecoration(
+                      hintText: 'Add a comment...',
+                      filled: true,
+                      fillColor: theme.scaffoldBackgroundColor,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide(color: borderColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide(color: borderColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide(color: blue, width: 1.5),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Material(
+                  color: blue,
+                  borderRadius: BorderRadius.circular(24),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: _addComment,
+                    child: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Icon(
+                        Icons.send_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -461,35 +432,29 @@ class TicketDetailsScreen extends StatelessWidget {
     );
   }
 
-  Widget _divider() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Divider(
-        height: 1,
-        color: Colors.grey.shade200,
-      ),
-    );
-  }
-
-  Widget _statusBadge(String status, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 7,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        status.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          color: color,
-          letterSpacing: 0.5,
+  Widget _metaRow(
+    String label,
+    String value,
+    Color valueColor,
+    Color textSecondary, {
+    bool isBold = false,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 14, color: textSecondary),
         ),
-      ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+            color: valueColor,
+          ),
+        ),
+      ],
     );
   }
 }

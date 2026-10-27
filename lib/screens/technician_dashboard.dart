@@ -1,258 +1,337 @@
 import 'package:flutter/material.dart';
+
 import '../models/ticket.dart';
-import '../services/ticket_service.dart';
+import '../services/api_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/celebration_dialog.dart';
+import '../widgets/triagedesk_logo.dart';
+import 'login_screen.dart';
+import 'settings_screen.dart';
 
 class TechnicianDashboard extends StatefulWidget {
   const TechnicianDashboard({super.key});
 
   @override
-  State<TechnicianDashboard> createState() =>
-      _TechnicianDashboardState();
+  State<TechnicianDashboard> createState() => _TechnicianDashboardState();
 }
 
 class _TechnicianDashboardState extends State<TechnicianDashboard> {
-  // ============================================================
-  // TRIAGEDESK COLORS
-  // Same visual system used by Reporter Dashboard
-  // ============================================================
+  static const Color navy = AppTheme.charcoal;
+  static const Color blue = AppTheme.accentTeal;
+  static const Color success = AppTheme.accentTeal;
+  static const Color warning = AppTheme.warningGold;
 
-  static const Color navy = Color(0xFF12355B);
-  static const Color blue = Color(0xFF2563EB);
-  static const Color background = Color(0xFFF5F7FA);
-  static const Color textPrimary = Color(0xFF172033);
-  static const Color textSecondary = Color(0xFF667085);
-  static const Color success = Color(0xFF16A34A);
-  static const Color warning = Color(0xFFF59E0B);
+  List<Ticket> _tickets = [];
+  bool _loading = true;
+  String? _error;
 
-  void _refreshTickets() {
-    setState(() {});
+  @override
+  void initState() {
+    super.initState();
+    _refreshTickets();
   }
 
-  void _openTicket(Ticket ticket) {
-    showModalBottomSheet(
+  Future<void> _refreshTickets() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+
+    try {
+      final data = await ApiService.getTickets();
+      final tickets = data
+          .whereType<Map>()
+          .map((item) => Ticket.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _tickets = tickets;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+        _loading = false;
+      });
+    }
+  }
+
+  int get _openCount => _tickets.where((t) => t.status == 'Open').length;
+
+  int get _progressCount =>
+      _tickets.where((t) => t.status == 'In Progress').length;
+
+  int get _resolvedCount =>
+      _tickets.where((t) => t.status == 'Resolved').length;
+
+  int get _urgentCount => _tickets
+      .where((t) => t.priority == 'High' || t.priority == 'Critical')
+      .length;
+
+  void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : navy,
+      ),
+    );
+  }
+
+  Future<void> _openTicket(Ticket ticket) async {
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return _ManageTicketSheet(
-          ticket: ticket,
-          onUpdated: _refreshTickets,
+      builder: (_) => _ManageTicketSheet(
+        ticket: ticket,
+        onUpdated: _refreshTickets,
+        onMessage: _showMessage,
+      ),
+    );
+    await _refreshTickets();
+  }
+
+  Future<void> _confirmSignOut() async {
+    final shouldSignOut = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Theme.of(dialogContext).cardColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'Sign Out',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: const Text(
+            'Are you sure you want to sign out of TriageDesk?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626),
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Sign Out'),
+            ),
+          ],
         );
       },
     );
+
+    if (shouldSignOut == true && mounted) {
+      ApiService.logout();
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<Ticket> tickets = TicketService.tickets;
-
-    final int openTickets = TicketService.openTickets;
-    final int inProgressTickets = TicketService.inProgressTickets;
-    final int resolvedTickets = TicketService.resolvedTickets;
-
-    final int urgentTickets = tickets.where((ticket) {
-      return ticket.priority == 'High' ||
-          ticket.priority == 'Critical';
-    }).length;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final background = Theme.of(context).scaffoldBackgroundColor;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return Scaffold(
       backgroundColor: background,
-
-      // ========================================================
-      // APP BAR
-      // ========================================================
-
       appBar: AppBar(
         backgroundColor: navy,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          'TriageDesk',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.3,
-          ),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TriageDeskLogo(size: 32),
+            SizedBox(width: 10),
+            Text(
+              'TriageDesk',
+              style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.3),
+            ),
+          ],
         ),
         actions: [
           IconButton(
-            onPressed: () {},
-            icon: const Icon(
-              Icons.notifications_none_rounded,
-            ),
-            tooltip: 'Notifications',
+            onPressed: _refreshTickets,
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Refresh tickets',
+          ),
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings & Appearance',
+          ),
+          IconButton(
+            onPressed: _confirmSignOut,
+            icon: const Icon(Icons.logout_rounded),
+            tooltip: 'Sign out',
           ),
         ],
       ),
-
       body: RefreshIndicator(
         color: navy,
-        onRefresh: () async {
-          _refreshTickets();
-        },
-
-        child: SingleChildScrollView(
+        onRefresh: _refreshTickets,
+        child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(
-            20,
-            22,
-            20,
-            30,
-          ),
-
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-
-              // ==================================================
-              // GREETING
-              // ==================================================
-
-              const Text(
-                'Hello, Technician',
-                style: TextStyle(
-                  fontSize: 27,
-                  fontWeight: FontWeight.bold,
-                  color: textPrimary,
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
+          children: [
+            const Text(
+              'Hello, Technician',
+              style: TextStyle(fontSize: 27, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'View, manage and resolve support tickets.',
+              style: TextStyle(fontSize: 14, color: secondaryColor),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: _summaryCard(
+                    'Open',
+                    _openCount,
+                    Icons.pending_actions_outlined,
+                    warning,
+                    isDark,
+                    secondaryColor,
+                  ),
                 ),
-              ),
-
-              const SizedBox(height: 6),
-
-              const Text(
-                'View, manage and resolve support tickets.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: textSecondary,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _summaryCard(
+                    'Urgent',
+                    _urgentCount,
+                    Icons.priority_high_rounded,
+                    warning,
+                    isDark,
+                    secondaryColor,
+                  ),
                 ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // ==================================================
-              // SUMMARY CARDS
-              // Same structure as Reporter Dashboard
-              // ==================================================
-
-              Row(
-                children: [
-                  Expanded(
-                    child: _summaryCard(
-                      title: 'Open',
-                      value: openTickets.toString(),
-                      icon: Icons.pending_actions_outlined,
-                      iconColor: warning,
-                    ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _summaryCard(
+                    'In Progress',
+                    _progressCount,
+                    Icons.sync_outlined,
+                    blue,
+                    isDark,
+                    secondaryColor,
                   ),
-
-                  const SizedBox(width: 12),
-
-                  Expanded(
-                    child: _summaryCard(
-                      title: 'Urgent',
-                      value: urgentTickets.toString(),
-                      icon: Icons.priority_high_rounded,
-                      iconColor: warning,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: _summaryCard(
-                      title: 'In Progress',
-                      value: inProgressTickets.toString(),
-                      icon: Icons.sync_outlined,
-                      iconColor: blue,
-                    ),
-                  ),
-
-                  const SizedBox(width: 12),
-
-                  Expanded(
-                    child: _summaryCard(
-                      title: 'Resolved',
-                      value: resolvedTickets.toString(),
-                      icon: Icons.check_circle_outline,
-                      iconColor: success,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 30),
-
-              // ==================================================
-              // SUPPORT TICKETS HEADING
-              // ==================================================
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Support Tickets',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: textPrimary,
-                    ),
-                  ),
-
-                  Text(
-                    '${tickets.length} tickets',
-                    style: const TextStyle(
-                      color: blue,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-
-              // ==================================================
-              // TICKETS
-              // ==================================================
-
-              if (tickets.isEmpty)
-                _emptyTicketsState()
-              else
-                ...tickets.map(
-                  (ticket) => _ticketCard(ticket),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _summaryCard(
+                    'Resolved',
+                    _resolvedCount,
+                    Icons.check_circle_outline,
+                    success,
+                    isDark,
+                    secondaryColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 30),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Support Tickets',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '${_tickets.length} tickets',
+                  style: const TextStyle(
+                    color: blue,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_loading && _tickets.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(35),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_error != null && _tickets.isEmpty)
+              _messageState(
+                icon: Icons.cloud_off_outlined,
+                title: 'Could not load tickets',
+                message: _error!,
+                isDark: isDark,
+                secondaryColor: secondaryColor,
+                action: TextButton.icon(
+                  onPressed: _refreshTickets,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Try again'),
+                ),
+              )
+            else if (_tickets.isEmpty)
+              _messageState(
+                icon: Icons.inbox_outlined,
+                title: 'No support tickets',
+                message: 'New tickets submitted by reporters will appear here.',
+                isDark: isDark,
+                secondaryColor: secondaryColor,
+              )
+            else ...[
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    'Refresh warning: $_error',
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              ..._tickets.map((t) => _ticketCard(t, isDark, secondaryColor)),
             ],
-          ),
+          ],
         ),
       ),
     );
   }
 
-  // ============================================================
-  // SUMMARY CARD
-  // Matches Reporter Dashboard
-  // ============================================================
+  Widget _summaryCard(
+    String title,
+    int value,
+    IconData icon,
+    Color iconColor,
+    bool isDark,
+    Color secondaryColor,
+  ) {
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
 
-  Widget _summaryCard({
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color iconColor,
-  }) {
     return Container(
       padding: const EdgeInsets.all(16),
-
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(16),
-
-        border: Border.all(
-          color: Colors.grey.shade200,
-        ),
-
+        border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.035),
@@ -261,49 +340,36 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
           ),
         ],
       ),
-
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-
               Container(
                 width: 38,
                 height: 38,
-
                 decoration: BoxDecoration(
                   color: iconColor.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(10),
                 ),
-
-                child: Icon(
-                  icon,
-                  color: iconColor,
-                  size: 20,
-                ),
+                child: Icon(icon, color: iconColor, size: 20),
               ),
-
               Text(
-                value,
+                '$value',
                 style: const TextStyle(
                   fontSize: 25,
                   fontWeight: FontWeight.bold,
-                  color: textPrimary,
                 ),
               ),
             ],
           ),
-
           const SizedBox(height: 12),
-
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: textSecondary,
+              color: secondaryColor,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -312,26 +378,17 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     );
   }
 
-  // ============================================================
-  // TICKET CARD
-  // Matches Reporter Dashboard
-  // ============================================================
-
-  Widget _ticketCard(Ticket ticket) {
-    final Color statusColor = _statusColor(ticket.status);
-    final IconData icon = _categoryIcon(ticket.category);
+  Widget _ticketCard(Ticket ticket, bool isDark, Color secondaryColor) {
+    final statusColor = _statusColor(ticket.status);
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(16),
-
-        border: Border.all(
-          color: Colors.grey.shade200,
-        ),
-
+        border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.035),
@@ -340,94 +397,61 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
           ),
         ],
       ),
-
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-
-        onTap: () {
-          _openTicket(ticket);
-        },
-
+        onTap: () => _openTicket(ticket),
         child: Padding(
           padding: const EdgeInsets.all(15),
-
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-
-              // ==================================================
-              // CATEGORY ICON
-              // ==================================================
-
               Container(
                 width: 44,
                 height: 44,
-
                 decoration: BoxDecoration(
                   color: navy.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
                 ),
-
                 child: Icon(
-                  icon,
+                  _categoryIcon(ticket.category),
                   color: navy,
                   size: 21,
                 ),
               ),
-
               const SizedBox(width: 13),
-
-              // ==================================================
-              // TICKET INFORMATION
-              // ==================================================
-
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-
+                  children: [
                     Text(
                       ticket.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
-                        color: textPrimary,
                       ),
                     ),
-
                     const SizedBox(height: 5),
-
                     Text(
                       ticket.category,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: textSecondary,
-                      ),
+                      style: TextStyle(fontSize: 12, color: secondaryColor),
                     ),
-
                     const SizedBox(height: 9),
-
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-
-                        // Status
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 9,
                             vertical: 5,
                           ),
-
                           decoration: BoxDecoration(
-                            color: statusColor.withValues(
-                              alpha: 0.10,
-                            ),
-                            borderRadius:
-                                BorderRadius.circular(20),
+                            color: statusColor.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(20),
                           ),
-
                           child: Text(
                             ticket.status,
                             style: TextStyle(
@@ -437,29 +461,19 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
                             ),
                           ),
                         ),
-
-                        const SizedBox(width: 8),
-
-                        // Ticket ID
                         Text(
-                          ticket.id,
-                          style: const TextStyle(
+                          ticket.ticketNumber ?? 'ID ${ticket.id}',
+                          style: TextStyle(
                             fontSize: 11,
-                            color: textSecondary,
+                            color: secondaryColor,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-
-                        const Spacer(),
-
-                        // Priority
                         Text(
                           ticket.priority,
                           style: TextStyle(
                             fontSize: 11,
-                            color: _priorityColor(
-                              ticket.priority,
-                            ),
+                            color: _priorityColor(ticket.priority),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -468,13 +482,7 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
                   ],
                 ),
               ),
-
-              const SizedBox(width: 5),
-
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: textSecondary,
-              ),
+              Icon(Icons.chevron_right_rounded, color: secondaryColor),
             ],
           ),
         ),
@@ -482,185 +490,134 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     );
   }
 
-  // ============================================================
-  // EMPTY STATE
-  // ============================================================
+  Widget _messageState({
+    required IconData icon,
+    required String title,
+    required String message,
+    required bool isDark,
+    required Color secondaryColor,
+    Widget? action,
+  }) {
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
 
-  Widget _emptyTicketsState() {
     return Container(
       width: double.infinity,
-
-      padding: const EdgeInsets.symmetric(
-        horizontal: 24,
-        vertical: 40,
-      ),
-
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 35),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(16),
-
-        border: Border.all(
-          color: Colors.grey.shade200,
-        ),
+        border: Border.all(color: borderColor),
       ),
-
-      child: const Column(
+      child: Column(
         children: [
-
-          Icon(
-            Icons.inbox_outlined,
-            size: 48,
-            color: textSecondary,
-          ),
-
-          SizedBox(height: 14),
-
+          Icon(icon, size: 45, color: secondaryColor),
+          const SizedBox(height: 14),
           Text(
-            'No support tickets',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.bold,
-              color: textPrimary,
-            ),
+            title,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
           ),
-
-          SizedBox(height: 6),
-
+          const SizedBox(height: 6),
           Text(
-            'New tickets submitted by reporters will appear here.',
+            message,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: textSecondary,
-              height: 1.4,
-            ),
+            style: TextStyle(fontSize: 13, color: secondaryColor, height: 1.4),
           ),
+          if (action != null) ...[const SizedBox(height: 12), action],
         ],
       ),
     );
   }
 
-  // ============================================================
-  // STATUS COLOR
-  // Same system as Reporter Dashboard
-  // ============================================================
-
   Color _statusColor(String status) {
     switch (status) {
       case 'Open':
         return warning;
-
       case 'In Progress':
         return blue;
-
       case 'Resolved':
         return success;
-
       case 'Closed':
-        return textSecondary;
-
+        return Theme.of(context).colorScheme.onSurfaceVariant;
       default:
-        return textSecondary;
+        return Theme.of(context).colorScheme.onSurfaceVariant;
     }
   }
-
-  // ============================================================
-  // PRIORITY COLOR
-  // ============================================================
 
   Color _priorityColor(String priority) {
     switch (priority) {
       case 'Critical':
         return const Color(0xFFDC2626);
-
       case 'High':
         return warning;
-
       case 'Medium':
         return blue;
-
-      case 'Low':
-        return textSecondary;
-
       default:
-        return textSecondary;
+        return Theme.of(context).colorScheme.onSurfaceVariant;
     }
   }
 
-  // ============================================================
-  // CATEGORY ICON
-  // ============================================================
-
   IconData _categoryIcon(String category) {
-    switch (category) {
-      case 'Hardware':
+    switch (category.toLowerCase()) {
+      case 'hardware':
         return Icons.devices_outlined;
-
-      case 'Software':
+      case 'software':
         return Icons.apps_outlined;
-
-      case 'Network':
+      case 'network':
         return Icons.wifi_rounded;
-
-      case 'Email':
+      case 'email':
         return Icons.email_outlined;
-
-      case 'Account Access':
+      case 'account access':
         return Icons.lock_outline_rounded;
-
-      case 'Printing':
+      case 'printer':
+      case 'printing':
         return Icons.print_outlined;
-
       default:
         return Icons.help_outline_rounded;
     }
   }
 }
 
-
-// ================================================================
-// MANAGE TICKET SHEET
-// ================================================================
-
 class _ManageTicketSheet extends StatefulWidget {
   final Ticket ticket;
-  final VoidCallback onUpdated;
+  final Future<void> Function() onUpdated;
+  final void Function(String message, {bool isError}) onMessage;
 
   const _ManageTicketSheet({
     required this.ticket,
     required this.onUpdated,
+    required this.onMessage,
   });
 
   @override
-  State<_ManageTicketSheet> createState() =>
-      _ManageTicketSheetState();
+  State<_ManageTicketSheet> createState() => _ManageTicketSheetState();
 }
 
-class _ManageTicketSheetState
-    extends State<_ManageTicketSheet> {
+class _ManageTicketSheetState extends State<_ManageTicketSheet> {
+  static const Color navy = AppTheme.charcoal;
+  static const Color blue = AppTheme.accentTeal;
+  static const Color success = AppTheme.accentTeal;
 
-  // Same colors as Reporter Dashboard
-  static const Color navy = Color(0xFF12355B);
-  static const Color blue = Color(0xFF2563EB);
-  static const Color background = Color(0xFFF5F7FA);
-  static const Color textPrimary = Color(0xFF172033);
-  static const Color textSecondary = Color(0xFF667085);
-  static const Color success = Color(0xFF16A34A);
-  static const Color warning = Color(0xFFF59E0B);
+  late final TextEditingController _notesController;
+  late final TextEditingController _resolutionController;
+  bool _busy = false;
+  String _status = '';
 
-  final String technicianName = 'Technician';
-
-  late TextEditingController _notesController;
-  late TextEditingController _resolutionController;
+  int get _ticketId {
+    final id = int.tryParse(widget.ticket.id);
+    if (id == null) {
+      throw Exception('This ticket has an invalid database ID.');
+    }
+    return id;
+  }
 
   @override
   void initState() {
     super.initState();
-
+    _status = widget.ticket.status;
     _notesController = TextEditingController(
       text: widget.ticket.technicianNotes ?? '',
     );
-
     _resolutionController = TextEditingController(
       text: widget.ticket.resolution ?? '',
     );
@@ -673,711 +630,284 @@ class _ManageTicketSheetState
     super.dispose();
   }
 
+  Future<void> _runAction(
+    Future<void> Function() action,
+    String successMessage,
+  ) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+
+    try {
+      await action();
+      if (!mounted) return;
+      await widget.onUpdated();
+      if (!mounted) return;
+      widget.onMessage(successMessage);
+    } catch (error) {
+      if (mounted) {
+        widget.onMessage(
+          error.toString().replaceFirst('Exception: ', ''),
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ticket = widget.ticket;
+    final background = Theme.of(context).scaffoldBackgroundColor;
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return SafeArea(
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: background,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(24),
-          ),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-
         child: Padding(
           padding: EdgeInsets.only(
             left: 20,
             right: 20,
             top: 12,
-            bottom:
-                MediaQuery.of(context).viewInsets.bottom + 18,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 18,
           ),
-
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-
-                // ==================================================
-                // HANDLE
-                // ==================================================
-
                 Center(
                   child: Container(
                     width: 42,
                     height: 4,
-
                     decoration: BoxDecoration(
-                      color: Colors.black26,
-                      borderRadius:
-                          BorderRadius.circular(10),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 18),
-
-                // ==================================================
-                // HEADER
-                // ==================================================
-
-                Row(
-                  children: [
-
-                    Container(
-                      width: 44,
-                      height: 44,
-
-                      decoration: BoxDecoration(
-                        color:
-                            navy.withValues(alpha: 0.08),
-                        borderRadius:
-                            BorderRadius.circular(12),
-                      ),
-
-                      child: const Icon(
-                        Icons.assignment_outlined,
-                        color: navy,
-                        size: 22,
-                      ),
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
-
-                        children: [
-                          Text(
-                            'Manage Ticket',
-                            style: TextStyle(
-                              color: textPrimary,
-                              fontSize: 21,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-
-                          SizedBox(height: 3),
-
-                          Text(
-                            'Review and update this support request.',
-                            style: TextStyle(
-                              color: textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                const Text(
+                  'Manage Ticket',
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
                 ),
-
-                const SizedBox(height: 22),
-
-                // ==================================================
-                // TICKET SUMMARY
-                // ==================================================
-
+                const SizedBox(height: 5),
+                Text(
+                  'Review and update this support request.',
+                  style: TextStyle(color: secondaryColor, fontSize: 12),
+                ),
+                const SizedBox(height: 20),
                 Container(
                   width: double.infinity,
-
                   padding: const EdgeInsets.all(16),
-
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius:
-                        BorderRadius.circular(16),
-
-                    border: Border.all(
-                      color: Colors.grey.shade200,
-                    ),
-
-                    boxShadow: [
-                      BoxShadow(
-                        color:
-                            Colors.black.withValues(alpha: 0.025),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: borderColor),
                   ),
-
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-
-                      Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.spaceBetween,
-
-                        children: [
-
-                          Text(
-                            ticket.id,
-                            style: const TextStyle(
-                              color: textSecondary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-
-                          _sheetStatusBadge(
-                            ticket.status,
-                          ),
-                        ],
+                      Text(
+                        ticket.ticketNumber ?? 'Ticket ${ticket.id}',
+                        style: TextStyle(color: secondaryColor, fontSize: 12),
                       ),
-
-                      const SizedBox(height: 12),
-
+                      const SizedBox(height: 10),
                       Text(
                         ticket.title,
                         style: const TextStyle(
-                          color: textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-
-                      const SizedBox(height: 14),
-
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-
-                        children: [
-                          _detailChip(
-                            Icons.category_outlined,
-                            ticket.category,
-                          ),
-
-                          _detailChip(
-                            Icons.priority_high_rounded,
-                            ticket.priority,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // ==================================================
-                // TICKET INFORMATION
-                // ==================================================
-
-                _sectionTitle(
-                  'Ticket Information',
-                  Icons.info_outline,
-                ),
-
-                const SizedBox(height: 10),
-
-                Container(
-                  width: double.infinity,
-
-                  padding: const EdgeInsets.all(16),
-
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius:
-                        BorderRadius.circular(16),
-
-                    border: Border.all(
-                      color: Colors.grey.shade200,
-                    ),
-                  ),
-
-                  child: Column(
-                    children: [
-
-                      _infoRow(
-                        'Impact',
-                        ticket.impact,
-                      ),
-
-                      _infoRow(
-                        'Urgency',
-                        ticket.urgency,
-                      ),
-
-                      _infoRow(
-                        'Device',
-                        ticket.device,
-                      ),
-
-                      _infoRow(
-                        'Location',
-                        ticket.location,
-                      ),
-
-                      _infoRow(
-                        'Assigned Technician',
-                        ticket.assignedTechnician ??
-                            'Not assigned',
-                        isLast: true,
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // ==================================================
-                // DESCRIPTION
-                // ==================================================
-
-                _sectionTitle(
-                  'Problem Description',
-                  Icons.description_outlined,
-                ),
-
-                const SizedBox(height: 10),
-
-                Container(
-                  width: double.infinity,
-
-                  padding: const EdgeInsets.all(16),
-
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius:
-                        BorderRadius.circular(16),
-
-                    border: Border.all(
-                      color: Colors.grey.shade200,
-                    ),
-                  ),
-
-                  child: Text(
-                    ticket.description,
-                    style: const TextStyle(
-                      color: textSecondary,
-                      fontSize: 14,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // ==================================================
-                // ACCEPT TICKET
-                // ==================================================
-
-                if (ticket.status == 'Open')
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        final success =
-                            TicketService.acceptTicket(
-                          ticket.id,
-                          technicianName,
-                        );
-
-                        if (success) {
-                          setState(() {});
-                          widget.onUpdated();
-
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Ticket accepted successfully.',
-                              ),
-                            ),
-                          );
-                        }
-                      },
-
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: navy,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-
-                        shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(14),
-                        ),
-                      ),
-
-                      icon: const Icon(
-                        Icons.check_circle_outline,
-                      ),
-
-                      label: const Text(
-                        'Accept Ticket',
+                      const SizedBox(height: 8),
+                      Text('${ticket.category} • ${ticket.priority}'),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Status: $_status',
                         style: TextStyle(
+                          color: _status == 'Resolved' ? success : blue,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
+                    ],
                   ),
-
-                // ==================================================
-                // STATUS
-                // ==================================================
-
-                if (ticket.status == 'In Progress') ...[
-
-                  const SizedBox(height: 4),
-
-                  _sectionTitle(
-                    'Ticket Status',
-                    Icons.sync_outlined,
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius:
-                          BorderRadius.circular(14),
-
-                      border: Border.all(
-                        color: Colors.grey.shade200,
-                      ),
-                    ),
-
-                    child:
-                        DropdownButtonFormField<String>(
-                      initialValue: ticket.status,
-
-                      decoration:
-                          const InputDecoration(
-                        border: InputBorder.none,
-                        contentPadding:
-                            EdgeInsets.symmetric(
-                          horizontal: 15,
-                          vertical: 5,
-                        ),
-                      ),
-
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'In Progress',
-                          child: Text('In Progress'),
-                        ),
-
-                        DropdownMenuItem(
-                          value: 'Resolved',
-                          child: Text('Resolved'),
-                        ),
-                      ],
-
-                      onChanged: (value) {
-                        if (value == null) return;
-
-                        TicketService.updateStatus(
-                          ticket.id,
-                          value,
-                        );
-
-                        setState(() {});
-                        widget.onUpdated();
-                      },
-                    ),
-                  ),
-                ],
-
+                ),
+                const SizedBox(height: 18),
+                _sectionTitle('Ticket Information'),
+                const SizedBox(height: 8),
+                _info('Impact', ticket.impact, secondaryColor),
+                _info('Urgency', ticket.urgency, secondaryColor),
+                _info('Device', ticket.device, secondaryColor),
+                _info('Location', ticket.location, secondaryColor),
+                _info(
+                  'Assigned Technician',
+                  ticket.assignedTechnician ?? 'Not assigned',
+                  secondaryColor,
+                ),
+                const SizedBox(height: 18),
+                _sectionTitle('Problem Description'),
+                const SizedBox(height: 8),
+                Text(
+                  ticket.description,
+                  style: TextStyle(color: secondaryColor, height: 1.5),
+                ),
                 const SizedBox(height: 22),
 
-                // ==================================================
-                // TECHNICIAN NOTES
-                // ==================================================
+                if (_status == 'Open')
+                  _button(
+                    'Accept Ticket',
+                    Icons.check_circle_outline,
+                    () => _runAction(() async {
+                      await ApiService.acceptTicket(_ticketId);
+                      if (mounted) setState(() => _status = 'In Progress');
+                    }, 'Ticket accepted successfully.'),
+                  ),
 
-                _sectionTitle(
-                  'Technician Notes',
-                  Icons.note_alt_outlined,
-                ),
+                if (_status == 'In Progress') ...[
+                  _sectionTitle('Ticket Status'),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: _status,
+                    dropdownColor: cardColor,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: cardColor,
+                      border: OutlineInputBorder(
+                        borderSide: BorderSide(color: borderColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: borderColor),
+                      ),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'In Progress',
+                        child: Text('In Progress'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Resolved',
+                        child: Text('Resolved'),
+                      ),
+                    ],
+                    onChanged: _busy
+                        ? null
+                        : (value) async {
+                            if (value == null) return;
+                            if (value == 'Resolved') {
+                              if (_resolutionController.text.trim().isEmpty) {
+                                widget.onMessage(
+                                  'Enter the resolution before resolving the ticket.',
+                                  isError: true,
+                                );
+                                return;
+                              }
+                              await _resolveTicket();
+                            } else {
+                              await _runAction(() async {
+                                await ApiService.updateTicketStatus(
+                                  ticketId: _ticketId,
+                                  status: value,
+                                );
+                                if (mounted) setState(() => _status = value);
+                              }, 'Ticket status updated.');
+                            }
+                          },
+                  ),
+                  const SizedBox(height: 18),
+                ],
 
-                const SizedBox(height: 10),
-
+                _sectionTitle('Technician Notes'),
+                const SizedBox(height: 8),
                 TextField(
                   controller: _notesController,
                   maxLines: 4,
-
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                   decoration: InputDecoration(
-                    hintText:
-                        'Enter notes about the troubleshooting performed...',
-
-                    hintStyle: const TextStyle(
-                      color: textSecondary,
-                      fontSize: 13,
-                    ),
-
+                    hintText: 'Enter troubleshooting notes...',
+                    hintStyle: TextStyle(color: secondaryColor),
                     filled: true,
-                    fillColor: Colors.white,
-
+                    fillColor: cardColor,
                     border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(14),
-
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade200,
-                      ),
+                      borderSide: BorderSide(color: borderColor),
                     ),
-
                     enabledBorder: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(14),
-
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade200,
-                      ),
-                    ),
-
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(14),
-
-                      borderSide: const BorderSide(
-                        color: navy,
-                        width: 1.5,
-                      ),
+                      borderSide: BorderSide(color: borderColor),
                     ),
                   ),
                 ),
+                const SizedBox(height: 8),
+                _button('Save Technician Note', Icons.note_alt_outlined, () {
+                  final note = _notesController.text.trim();
+                  if (note.isEmpty) {
+                    widget.onMessage(
+                      'Enter a note before saving.',
+                      isError: true,
+                    );
+                    return;
+                  }
+                  _runAction(() async {
+                    await ApiService.addTicketNote(
+                      ticketId: _ticketId,
+                      note: note,
+                    );
+                  }, 'Technician note saved.');
+                }, outlined: true),
+                const SizedBox(height: 20),
 
-                const SizedBox(height: 10),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-
-                  child: OutlinedButton(
-                    onPressed: () {
-                      if (_notesController.text
-                          .trim()
-                          .isEmpty) {
-                        return;
-                      }
-
-                      TicketService.addTechnicianNote(
-                        ticket.id,
-                        _notesController.text.trim(),
-                      );
-
-                      setState(() {});
-                      widget.onUpdated();
-
-                      ScaffoldMessenger.of(context)
-                          .showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Technician note saved.',
-                          ),
-                        ),
-                      );
-                    },
-
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: navy,
-
-                      side: const BorderSide(
-                        color: navy,
-                      ),
-
-                      shape: RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(14),
-                      ),
-                    ),
-
-                    child: const Text(
-                      'Save Technician Note',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 22),
-
-                // ==================================================
-                // RESOLUTION
-                // ==================================================
-
-                _sectionTitle(
-                  'Resolution',
-                  Icons.task_alt_outlined,
-                ),
-
-                const SizedBox(height: 10),
-
+                _sectionTitle('Resolution'),
+                const SizedBox(height: 8),
                 TextField(
                   controller: _resolutionController,
                   maxLines: 4,
-
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                   decoration: InputDecoration(
-                    hintText:
-                        'Describe how the issue was resolved...',
-
-                    hintStyle: const TextStyle(
-                      color: textSecondary,
-                      fontSize: 13,
-                    ),
-
+                    hintText: 'Describe how the issue was resolved...',
+                    hintStyle: TextStyle(color: secondaryColor),
                     filled: true,
-                    fillColor: Colors.white,
-
+                    fillColor: cardColor,
                     border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(14),
-
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade200,
-                      ),
+                      borderSide: BorderSide(color: borderColor),
                     ),
-
                     enabledBorder: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(14),
-
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade200,
-                      ),
-                    ),
-
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(14),
-
-                      borderSide: const BorderSide(
-                        color: navy,
-                        width: 1.5,
-                      ),
+                      borderSide: BorderSide(color: borderColor),
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 10),
 
-                // ==================================================
-                // RESOLVE
-                // ==================================================
-
-                if (ticket.status != 'Resolved')
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        if (_resolutionController.text
-                            .trim()
-                            .isEmpty) {
-                          return;
-                        }
-
-                        TicketService.addResolution(
-                          ticket.id,
-                          _resolutionController.text.trim(),
-                        );
-
-                        setState(() {});
-                        widget.onUpdated();
-
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Ticket resolved successfully.',
-                            ),
-                          ),
-                        );
-                      },
-
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: navy,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-
-                        shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(14),
-                        ),
-                      ),
-
-                      icon: const Icon(
-                        Icons.check_circle_outline,
-                      ),
-
-                      label: const Text(
-                        'Resolve Ticket',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                if (_status != 'Resolved')
+                  _button(
+                    'Resolve Ticket',
+                    Icons.task_alt_outlined,
+                    _resolveTicket,
                   ),
 
-                // ==================================================
-                // REOPEN
-                // ==================================================
-
-                if (ticket.status == 'Resolved')
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        TicketService.reopenTicket(
-                          ticket.id,
-                        );
-
-                        setState(() {});
-                        widget.onUpdated();
-
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Ticket reopened.',
-                            ),
-                          ),
-                        );
-                      },
-
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: navy,
-
-                        side: const BorderSide(
-                          color: navy,
-                        ),
-
-                        shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(14),
-                        ),
-                      ),
-
-                      icon: const Icon(
-                        Icons.refresh,
-                      ),
-
-                      label: const Text(
-                        'Reopen Ticket',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                if (_status == 'Resolved')
+                  _button(
+                    'Reopen Ticket',
+                    Icons.refresh,
+                    () => _runAction(() async {
+                      await ApiService.reopenTicket(_ticketId);
+                      if (mounted) setState(() => _status = 'Open');
+                    }, 'Ticket reopened.'),
+                    outlined: true,
                   ),
 
-                const SizedBox(height: 10),
+                if (_busy) ...[
+                  const SizedBox(height: 12),
+                  const Center(child: CircularProgressIndicator()),
+                ],
+                const SizedBox(height: 14),
               ],
             ),
           ),
@@ -1386,188 +916,100 @@ class _ManageTicketSheetState
     );
   }
 
-  // ============================================================
-  // SECTION TITLE
-  // ============================================================
+  Future<void> _resolveTicket() async {
+    final resolution = _resolutionController.text.trim();
+    if (resolution.isEmpty) {
+      widget.onMessage(
+        'Enter the resolution before resolving the ticket.',
+        isError: true,
+      );
+      return;
+    }
 
-  Widget _sectionTitle(
-    String title,
-    IconData icon,
-  ) {
-    return Row(
+    await _runAction(() async {
+      await ApiService.updateTicketStatus(
+        ticketId: _ticketId,
+        status: 'Resolved',
+        resolution: resolution,
+      );
+      if (mounted) {
+        setState(() => _status = 'Resolved');
+        Navigator.pop(context);
+        CelebrationDialog.show(
+          context,
+          title: 'Ticket Resolved! 🎉',
+          message: 'Great job! The ticket has been marked as resolved and the reporter has been notified.',
+        );
+      }
+    }, 'Ticket resolved successfully.');
+  }
+
+  Widget _sectionTitle(String title) => Text(
+    title,
+    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+  );
+
+  Widget _info(String label, String value, Color secondaryColor) => Padding(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          icon,
-          color: navy,
-          size: 19,
+        SizedBox(
+          width: 145,
+          child: Text(
+            label,
+            style: TextStyle(color: secondaryColor, fontSize: 12),
+          ),
         ),
-
-        const SizedBox(width: 8),
-
-        Text(
-          title,
-          style: const TextStyle(
-            color: textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
+        Expanded(
+          child: Text(
+            value.isEmpty ? 'Not provided' : value,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
 
-  // ============================================================
-  // INFO ROW
-  // ============================================================
-
-  Widget _infoRow(
+  Widget _button(
     String label,
-    String value, {
-    bool isLast = false,
-  }) {
-    return Container(
-      padding: EdgeInsets.only(
-        bottom: isLast ? 0 : 12,
-        top: 4,
-      ),
-
-      margin: EdgeInsets.only(
-        bottom: isLast ? 0 : 4,
-      ),
-
-      decoration: isLast
-          ? null
-          : BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: Colors.grey.shade200,
-                ),
-              ),
-            ),
-
-      child: Row(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-
-        children: [
-          SizedBox(
-            width: 145,
-
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ============================================================
-  // DETAIL CHIP
-  // ============================================================
-
-  Widget _detailChip(
     IconData icon,
-    String text,
-  ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 9,
-        vertical: 7,
-      ),
-
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(10),
-      ),
-
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-
-        children: [
-          Icon(
-            icon,
-            size: 14,
-            color: textSecondary,
-          ),
-
-          const SizedBox(width: 5),
-
-          Text(
-            text,
-            style: const TextStyle(
-              color: textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+    VoidCallback onPressed, {
+    bool outlined = false,
+  }) {
+    if (outlined) {
+      return SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: OutlinedButton.icon(
+          onPressed: _busy ? null : onPressed,
+          icon: Icon(icon),
+          label: Text(label),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: navy,
+            side: const BorderSide(color: navy),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  // ============================================================
-  // SHEET STATUS BADGE
-  // Same status colors as Reporter Dashboard
-  // ============================================================
-
-  Widget _sheetStatusBadge(String status) {
-    Color color;
-
-    switch (status) {
-      case 'Open':
-        color = warning;
-        break;
-
-      case 'In Progress':
-        color = blue;
-        break;
-
-      case 'Resolved':
-        color = success;
-        break;
-
-      case 'Closed':
-        color = textSecondary;
-        break;
-
-      default:
-        color = textSecondary;
+        ),
+      );
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 9,
-        vertical: 5,
-      ),
-
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(20),
-      ),
-
-      child: Text(
-        status,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton.icon(
+        onPressed: _busy ? null : onPressed,
+        icon: Icon(icon),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: navy,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
       ),
     );

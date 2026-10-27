@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100vw" height="100vh" viewBox="0 0 960 640" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="title description">
+  <title id="title">TriageDesk logo option 3</title>
+  <desc id="description">An abstract triage desk with three request lines organized into a teal checkmarked panel, beside the TriageDesk wordmark.</desc>
+  <rect width="960" height="640" rx="36" fill="#F4F6F5"/>
+  <rect x="72" y="72" width="816" height="496" rx="28" fill="#FFFFFF"/>
+
+  <g transform="translate(160 208)">
+    <rect width="224" height="224" rx="58" fill="#252B30"/>
+    <path d="M54 73h55M54 111h39M54 149h27" fill="none" stroke="#F4F6F5" stroke-linecap="round" stroke-width="13"/>
+    <path d="M128 54h45a22 22 0 0 1 22 22v72a22 22 0 0 1-22 22h-45a22 22 0 0 1-22-22V76a22 22 0 0 1 22-22Z" fill="#287C80"/>
+    <path d="m121 112 17 17 34-36" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="13"/>
+    <path d="M76 184h72" fill="none" stroke="#D5A64B" stroke-linecap="round" stroke-width="8"/>
+    <circle cx="169" cy="181" r="7" fill="#D5A64B"/>
+  </g>
+
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="432" y="316" fill="#252B30" font-size="64" font-weight="700" letter-spacing="-2">Triage<tspan fill="#287C80">Desk</tspan></text>
+    <text x="436" y="365" fill="#252B30" font-family="Aptos, 'Segoe UI', Arial, sans-serif" font-size="24" font-weight="400" letter-spacing="0.3">IT Support, Made Simpler</text>
+    <rect x="436" y="397" width="62" height="5" rx="2.5" fill="#D5A64B"/>
+  </g>
+</svg>

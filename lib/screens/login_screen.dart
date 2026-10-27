@@ -1,12 +1,12 @@
-
 import 'package:flutter/material.dart';
 
-import 'register_screen.dart';
 import '../services/api_service.dart';
-import 'reporter_dashboard.dart';
-import 'technician_dashboard.dart';
+import '../widgets/auth_page_frame.dart';
 import 'admin_dashboard.dart';
 import 'forgot_password_screen.dart';
+import 'register_screen.dart';
+import 'reporter_dashboard.dart';
+import 'technician_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,17 +17,12 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _rememberMe = false;
   bool _isLoading = false;
-
-  static const Color navy = Color(0xFF12355B);
-  static const Color blue = Color(0xFF2563EB);
-  static const Color background = Color(0xFFF5F7FA);
-  static const Color textPrimary = Color(0xFF172033);
-  static const Color textSecondary = Color(0xFF667085);
 
   @override
   void dispose() {
@@ -40,7 +35,6 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-
     try {
       final result = await ApiService.login(
         email: _emailController.text.trim(),
@@ -51,7 +45,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final user = Map<String, dynamic>.from(result['user'] as Map);
       final role = user['role']?.toString();
-
       late final Widget dashboard;
 
       switch (role) {
@@ -76,7 +69,6 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       final message = error.toString().replaceFirst('Exception: ', '');
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -89,322 +81,316 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  InputDecoration _inputDecoration({
-    required String label,
-    required String hint,
-    required IconData icon,
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      prefixIcon: Icon(icon, color: navy),
-      suffixIcon: suffixIcon,
-      filled: true,
-      fillColor: Colors.white,
-      labelStyle: const TextStyle(color: textSecondary),
-      hintStyle: const TextStyle(color: Colors.grey),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 17,
-      ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: blue, width: 2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Colors.red),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Colors.red, width: 2),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: background,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 45, 24, 30),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    final colors = Theme.of(context).colorScheme;
+
+    return AuthPageFrame(
+      topLeading: IconButton(
+        onPressed: () => Navigator.maybePop(context),
+        tooltip: 'Back to landing page',
+        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+        padding: EdgeInsets.zero,
+        style: IconButton.styleFrom(
+          foregroundColor: colors.onSurfaceVariant,
+          backgroundColor: colors.surface,
+          side: BorderSide(color: colors.outlineVariant),
+          shape: const CircleBorder(),
+        ),
+        icon: const Icon(Icons.arrow_back_rounded, size: 20),
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const AuthBrandHeader(
+              title: 'Welcome back',
+              subtitle: 'Sign in to access your tickets and updates.',
+              centeredBrand: true,
+            ),
+            const SizedBox(height: 22),
+            TextFormField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              style: TextStyle(color: colors.onSurface, fontSize: 14),
+              decoration: authInputDecoration(
+                context,
+                hint: 'Email address',
+                icon: Icons.mail_outline_rounded,
+              ),
+              validator: (value) {
+                final email = value?.trim() ?? '';
+                if (email.isEmpty) return 'Please enter your email address.';
+                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                  return 'Please enter a valid email address.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _passwordController,
+              obscureText: _obscurePassword,
+              textInputAction: TextInputAction.done,
+              style: TextStyle(color: colors.onSurface, fontSize: 14),
+              onFieldSubmitted: (_) => _login(),
+              decoration: authInputDecoration(
+                context,
+                hint: 'Password',
+                icon: Icons.lock_outline_rounded,
+                suffixIcon: IconButton(
+                  tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                  onPressed: () =>
+                      setState(() => _obscurePassword = !_obscurePassword),
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    color: colors.onSurfaceVariant,
+                    size: 19,
+                  ),
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your password.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 2),
+            Row(
               children: [
-                Center(
-                  child: Container(
-                    width: 76,
-                    height: 76,
-                    decoration: BoxDecoration(
-                      color: navy,
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: [
-                        BoxShadow(
-                          color: navy.withValues(alpha: 0.18),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _rememberMe = !_rememberMe),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Checkbox(
+                          value: _rememberMe,
+                          onChanged: (value) =>
+                              setState(() => _rememberMe = value ?? false),
+                          visualDensity: VisualDensity.compact,
+                          activeColor: colors.primary,
+                          side: BorderSide(color: colors.onSurfaceVariant),
+                        ),
+                        Flexible(
+                          child: Text(
+                            'Remember me',
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                    child: const Icon(
-                      Icons.support_agent_rounded,
-                      color: Colors.white,
-                      size: 39,
-                    ),
                   ),
                 ),
-                const SizedBox(height: 20),
-                const Center(
-                  child: Text(
-                    'TriageDesk',
-                    style: TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.bold,
-                      color: navy,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Center(
-                  child: Text(
-                    'IT Support Management',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: textSecondary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 40),
-                const Text(
-                  'Welcome back',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                const Text(
-                  'Sign in to access your TriageDesk account.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: textSecondary,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 26),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  decoration: _inputDecoration(
-                    label: 'Email Address',
-                    hint: 'Enter your email address',
-                    icon: Icons.email_outlined,
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please enter your email address.';
-                    }
-                    if (!value.contains('@')) {
-                      return 'Please enter a valid email address.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 18),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => _login(),
-                  decoration: _inputDecoration(
-                    label: 'Password',
-                    hint: 'Enter your password',
-                    icon: Icons.lock_outline_rounded,
-                    suffixIcon: IconButton(
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                        color: textSecondary,
-                      ),
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter your password.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-
-                // Forgot Password navigation — only one button.
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _isLoading
-                        ? null
-                        : () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    const ForgotPasswordScreen(),
-                              ),
-                            );
-                          },
-                    child: const Text(
-                      'Forgot Password?',
-                      style: TextStyle(
-                        color: blue,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: navy,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.grey.shade400,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
+                TextButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ForgotPasswordScreen(),
                             ),
-                          )
-                        : const Text(
-                            'Sign In',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          );
+                        },
+                  style: TextButton.styleFrom(
+                    foregroundColor: colors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: blue.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: blue.withValues(alpha: 0.12),
-                    ),
-                  ),
-                  child: const Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.security_outlined,
-                        color: blue,
-                        size: 21,
-                      ),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Your account determines the dashboard and permissions available to you.',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            height: 1.45,
-                            color: textPrimary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 35),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      "Don't have an account? ",
-                      style: TextStyle(
-                        color: textSecondary,
-                        fontSize: 14,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _isLoading
-                          ? null
-                          : () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      const RegisterScreen(),
-                                ),
-                              );
-                            },
-                      child: const Text(
-                        'Create Account',
-                        style: TextStyle(
-                          color: blue,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const Center(
-                  child: Text(
-                    'TriageDesk • IT Support Management',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: textSecondary,
-                    ),
+                  child: const Text(
+                    'Forgot password?',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 48,
+              child: FilledButton(
+                onPressed: _isLoading ? null : _login,
+                style: FilledButton.styleFrom(
+                  backgroundColor: colors.primary,
+                  foregroundColor: colors.onPrimary,
+                  shape: const StadiumBorder(),
+                ),
+                child: _isLoading
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colors.onPrimary,
+                        ),
+                      )
+                    : const Text(
+                        'Sign in',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                Expanded(child: Divider(color: colors.outlineVariant)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'or',
+                    style: TextStyle(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: colors.outlineVariant)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 46,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Google sign-in is not configured for this app.',
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: colors.onSurface,
+                  side: BorderSide(color: colors.outlineVariant),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                ),
+                icon: const GoogleLogoWidget(),
+                label: const Text(
+                  'Continue with Google',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Need an account? ',
+                  style: TextStyle(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+                TextButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const RegisterScreen(),
+                            ),
+                          );
+                        },
+                  style: TextButton.styleFrom(
+                    foregroundColor: colors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    'Create Account',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+class GoogleLogoWidget extends StatelessWidget {
+  const GoogleLogoWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 22,
+      height: 22,
+      child: CustomPaint(painter: _GoogleLogoPainter()),
+    );
+  }
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width * 0.36;
+    final strokeWidth = size.width * 0.22;
+    final bounds = Rect.fromCircle(center: center, radius: radius);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.butt
+      ..isAntiAlias = true;
+
+    void drawArc(Color color, double startDegrees, double sweepDegrees) {
+      paint.color = color;
+      canvas.drawArc(
+        bounds,
+        startDegrees * 3.141592653589793 / 180,
+        sweepDegrees * 3.141592653589793 / 180,
+        false,
+        paint,
+      );
+    }
+
+    drawArc(const Color(0xFFEA4335), 195, 70);
+    drawArc(const Color(0xFF4285F4), 265, 130);
+    drawArc(const Color(0xFF34A853), 35, 90);
+    drawArc(const Color(0xFFFBBC05), 125, 70);
+
+    paint
+      ..style = PaintingStyle.fill
+      ..color = const Color(0xFF4285F4);
+    final barHeight = strokeWidth * 0.95;
+    canvas.drawRect(
+      Rect.fromLTRB(
+        center.dx - 1,
+        center.dy - barHeight / 2,
+        size.width - size.width * 0.08,
+        center.dy + barHeight / 2,
+      ),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

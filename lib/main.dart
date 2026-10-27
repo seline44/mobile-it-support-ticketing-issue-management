@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
-import 'screens/login_screen.dart';
 
-void main() {
+import 'screens/login_screen.dart';
+import 'services/theme_service.dart';
+import 'theme/app_theme.dart';
+import 'widgets/triagedesk_logo.dart';
+import 'widgets/viewport_wrapper.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ThemeService.instance.init();
   runApp(const TriageDeskApp());
 }
 
@@ -10,17 +17,17 @@ class TriageDeskApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'TriageDesk',
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF12355B),
-        ),
+    return AnimatedBuilder(
+      animation: ThemeService.instance,
+      builder: (context, _) => MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'TriageDesk',
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeService.instance.themeMode,
+        builder: (context, child) => ViewportWrapper(child: child ?? const SizedBox()),
+        home: const WelcomeScreen(),
       ),
-      home: const WelcomeScreen(),
     );
   }
 }
@@ -28,201 +35,245 @@ class TriageDeskApp extends StatelessWidget {
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
-  static const Color navy = Color(0xFF12355B);
-  static const Color blue = Color(0xFF2563EB);
-  static const Color background = Color(0xFFF5F7FA);
-  static const Color textPrimary = Color(0xFF172033);
-  static const Color textSecondary = Color(0xFF667085);
-
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final background = isDark
+        ? const Color(0xFF08191D)
+        : const Color(0xFFF2F8FA);
+
     return Scaffold(
       backgroundColor: background,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 30, 24, 30),
-          child: Column(
-            children: [
-              const Spacer(),
-
-              // App logo
-              Container(
-                width: 96,
-                height: 96,
-                decoration: BoxDecoration(
-                  color: navy,
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(
-                      color: navy.withValues(alpha: 0.18),
-                      blurRadius: 22,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(22, 16, 22, 16),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 440,
+                  minHeight: constraints.maxHeight - 20,
                 ),
-                child: const Icon(
-                  Icons.support_agent_rounded,
-                  size: 50,
-                  color: Colors.white,
-                ),
-              ),
-
-              const SizedBox(height: 28),
-
-              // App name
-              const Text(
-                'TriageDesk',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.bold,
-                  color: navy,
-                  letterSpacing: 0.2,
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              // Short tagline
-              const Text(
-                'IT support, made simpler.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w600,
-                  color: textPrimary,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Supporting description
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 18),
-                child: Text(
-                  'Report issues, track requests, and stay updated from one place.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.5,
-                    color: textSecondary,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 30),
-
-              // Feature indicators
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _featureItem(
-                    icon: Icons.add_task_rounded,
-                    label: 'Report',
-                  ),
-                  const SizedBox(width: 18),
-                  _featureItem(
-                    icon: Icons.track_changes_rounded,
-                    label: 'Track',
-                  ),
-                  const SizedBox(width: 18),
-                  _featureItem(
-                    icon: Icons.notifications_none_rounded,
-                    label: 'Updates',
-                  ),
-                ],
-              ),
-
-              const Spacer(),
-
-              // Get Started button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const LoginScreen(),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: navy,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                child: IntrinsicHeight(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
+                      const SizedBox(height: 12),
+                      const TriageDeskLogo(size: 88),
+                      const SizedBox(height: 8),
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'Triage',
+                              style: TextStyle(color: colors.onSurface),
+                            ),
+                            TextSpan(
+                              text: 'Desk',
+                              style: TextStyle(color: colors.primary),
+                            ),
+                          ],
+                        ),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                       Text(
-                        'Get Started',
+                        'Something broken?',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
+                          color: colors.onSurface,
+                          fontSize: 27,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'We’ve got you.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.onSurfaceVariant,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      SizedBox(width: 9),
-                      Icon(
-                        Icons.arrow_forward_rounded,
-                        size: 20,
+                      const SizedBox(height: 4),
+                      Text(
+                        'Report an issue, track its progress, and stay informed every step of the way.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 14,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _ActionCard(
+                        icon: Icons.assignment_outlined,
+                        title: 'Report an issue',
+                        subtitle: 'Tell us what needs attention.',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LoginScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _ActionCard(
+                        icon: Icons.track_changes_rounded,
+                        title: 'Track your request',
+                        subtitle: 'Stay updated until resolution.',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LoginScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const Spacer(),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: FilledButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const LoginScreen(),
+                              ),
+                            );
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: colors.primary,
+                            foregroundColor: colors.onPrimary,
+                            shape: const StadiumBorder(),
+                            elevation: 0,
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'Get Started',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Icon(Icons.arrow_forward_rounded, size: 18),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Simple. Organized. Responsive.',
+                        style: TextStyle(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-              const SizedBox(height: 16),
+class _ActionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
 
-              const Text(
-                'Simple • Organized • Responsive',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: textSecondary,
+  const _ActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark ? const Color(0xFF122D33) : Colors.white;
+    final borderColor = isDark ? const Color(0xFF29464D) : const Color(0xFFE2EDF0);
+
+    return Material(
+      color: cardColor,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: Icon(icon, color: colors.primary, size: 19),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: colors.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colors.onSurfaceVariant,
+                size: 20,
               ),
             ],
           ),
         ),
       ),
     );
-  }
-
-  static Widget _featureItem({
-    required IconData icon,
-    required String label,
-  }) {
-    return Column(
-      children: [
-        Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: blue.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            icon,
-            size: 20,
-            color: blue,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: textSecondary,
-          ),
-        ),
-      ],
-    );
-    
   }
 }

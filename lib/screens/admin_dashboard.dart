@@ -1,17 +1,17 @@
-
 import 'package:flutter/material.dart';
 
 import '../models/ticket.dart';
 import '../services/ticket_service.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/triagedesk_logo.dart';
+import 'login_screen.dart';
+import 'settings_screen.dart';
 
-const Color adminNavy = Color(0xFF12355B);
-const Color adminBlue = Color(0xFF2563EB);
-const Color adminBackground = Color(0xFFF5F7FA);
-const Color adminText = Color(0xFF172033);
-const Color adminSecondary = Color(0xFF667085);
-const Color adminGreen = Color(0xFF16A34A);
-const Color adminAmber = Color(0xFFF59E0B);
+const Color adminNavy = AppTheme.charcoal;
+const Color adminBlue = AppTheme.accentTeal;
+const Color adminGreen = AppTheme.accentTeal;
+const Color adminAmber = AppTheme.warningGold;
 const Color adminRed = Color(0xFFDC2626);
 
 class AdminDashboard extends StatefulWidget {
@@ -22,27 +22,110 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
+  List<Ticket> _tickets = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTickets();
+  }
+
+  Future<void> _loadTickets() async {
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      final response = await ApiService.getTickets();
+      final loaded = response
+          .whereType<Map>()
+          .map((item) => Ticket.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _tickets = loaded;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _tickets = TicketService.tickets;
+        _isLoading = false;
+      });
+    }
+  }
+
   Future<void> _openPage(Widget page) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => page),
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+
+    if (mounted) {
+      _loadTickets();
+    }
+  }
+
+  Future<void> _confirmSignOut() async {
+    final shouldSignOut = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Theme.of(dialogContext).cardColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'Sign Out',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: const Text(
+            'Are you sure you want to sign out of TriageDesk?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626),
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Sign Out'),
+            ),
+          ],
+        );
+      },
     );
 
-    if (mounted) setState(() {});
+    if (shouldSignOut == true && mounted) {
+      ApiService.logout();
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final tickets = TicketService.tickets;
+    final adminBackground = Theme.of(context).scaffoldBackgroundColor;
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
-    final total = TicketService.totalTickets;
-    final open = TicketService.openTickets;
-    final inProgress = TicketService.inProgressTickets;
-    final resolved = TicketService.resolvedTickets;
+    final tickets = _tickets.isEmpty && !_isLoading
+        ? TicketService.tickets
+        : _tickets;
+
+    final total = tickets.length;
+    final open = tickets.where((t) => t.status == 'Open').length;
+    final inProgress = tickets.where((t) => t.status == 'In Progress').length;
+    final resolved = tickets.where((t) => t.status == 'Resolved').length;
 
     final slaRisk = tickets.where((ticket) {
-      final active = ticket.status != 'Resolved' &&
-          ticket.status != 'Closed';
+      final active = ticket.status != 'Resolved' && ticket.status != 'Closed';
 
       return active &&
           DateTime.now().difference(ticket.createdAt).inHours >= 24;
@@ -54,35 +137,53 @@ class _AdminDashboardState extends State<AdminDashboard> {
         backgroundColor: adminNavy,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          'Administrator Dashboard',
-          style: TextStyle(fontWeight: FontWeight.w700),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TriageDeskLogo(size: 32),
+            SizedBox(width: 10),
+            Text(
+              'Administrator Dashboard',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ],
         ),
         actions: [
           IconButton(
             tooltip: 'Refresh dashboard',
-            onPressed: () => setState(() {}),
+            onPressed: _loadTickets,
             icon: const Icon(Icons.refresh_rounded),
+          ),
+          IconButton(
+            tooltip: 'Settings & Appearance',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
+            icon: const Icon(Icons.settings_outlined),
+          ),
+          IconButton(
+            tooltip: 'Sign out',
+            onPressed: _confirmSignOut,
+            icon: const Icon(Icons.logout_rounded),
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async => setState(() {}),
+        onRefresh: _loadTickets,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
           children: [
             const Text(
               'IT Support Overview',
-              style: TextStyle(
-                fontSize: 27,
-                fontWeight: FontWeight.w800,
-                color: adminText,
-              ),
+              style: TextStyle(fontSize: 27, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Monitor tickets, SLA performance and workload.',
-              style: TextStyle(color: adminSecondary, fontSize: 14),
+              style: TextStyle(color: secondaryColor, fontSize: 14),
             ),
             const SizedBox(height: 24),
 
@@ -133,10 +234,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
             const SizedBox(height: 12),
             Card(
               elevation: 0,
-              color: Colors.white,
+              color: cardColor,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(color: Color(0xFFE4E7EC)),
+                side: BorderSide(color: borderColor),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -152,10 +253,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             'Currently in progress',
                             style: TextStyle(
-                              color: adminSecondary,
+                              color: secondaryColor,
                               fontSize: 13,
                             ),
                           ),
@@ -163,7 +264,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           Text(
                             '$inProgress tickets',
                             style: const TextStyle(
-                              color: adminText,
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
                             ),
@@ -174,9 +274,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     IconButton(
                       tooltip: 'View in-progress tickets',
                       onPressed: () => _openPage(
-                        const AdminTicketsScreen(
-                          initialFilter: 'In Progress',
-                        ),
+                        const AdminTicketsScreen(initialFilter: 'In Progress'),
                       ),
                       icon: const Icon(
                         Icons.arrow_forward_ios_rounded,
@@ -191,11 +289,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             const SizedBox(height: 28),
             const Text(
               'Administration',
-              style: TextStyle(
-                color: adminText,
-                fontSize: 21,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 14),
 
@@ -204,48 +298,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
               title: 'All Tickets',
               subtitle: 'View, inspect and update support tickets',
               color: adminBlue,
-              onTap: () => _openPage(
-                const AdminTicketsScreen(),
-              ),
+              onTap: () => _openPage(const AdminTicketsScreen()),
             ),
             _AdminMenuItem(
               icon: Icons.people_outline_rounded,
               title: 'Users and Technicians',
               subtitle: 'View the available roles and account structure',
-              color: const Color(0xFF7C3AED),
-              onTap: () => _openPage(
-                const AdminUsersScreen(),
-              ),
+              color: AppTheme.accentTeal,
+              onTap: () => _openPage(const AdminUsersScreen()),
             ),
             _AdminMenuItem(
               icon: Icons.speed_outlined,
               title: 'SLA Monitoring',
               subtitle: 'Inspect older unresolved tickets',
               color: adminRed,
-              onTap: () => _openPage(
-                const AdminSlaScreen(),
-              ),
+              onTap: () => _openPage(const AdminSlaScreen()),
             ),
             _AdminMenuItem(
               icon: Icons.bar_chart_rounded,
               title: 'Reports and Analytics',
               subtitle: 'Review ticket volumes and status distribution',
               color: adminGreen,
-              onTap: () => _openPage(
-                const AdminReportsScreen(),
-              ),
-            ),
-
-            const SizedBox(height: 18),
-            const Text(
-              '* SLA Risk currently uses a provisional 24-hour age threshold '
-              'for unresolved tickets. A configurable SLA policy has not '
-              'been implemented yet.',
-              style: TextStyle(
-                fontSize: 12,
-                color: adminSecondary,
-                height: 1.5,
-              ),
+              onTap: () => _openPage(const AdminReportsScreen()),
             ),
           ],
         ),
@@ -269,12 +343,16 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE4E7EC)),
+        border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.035),
@@ -297,17 +375,13 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             value,
-            style: const TextStyle(
-              color: adminText,
-              fontSize: 27,
-              fontWeight: FontWeight.w800,
-            ),
+            style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
             title,
-            style: const TextStyle(
-              color: adminSecondary,
+            style: TextStyle(
+              color: secondaryColor,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -335,22 +409,23 @@ class _AdminMenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
     return Card(
-      color: Colors.white,
+      color: cardColor,
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE4E7EC)),
+        side: BorderSide(color: borderColor),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 15,
-            vertical: 15,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
           child: Row(
             children: [
               Container(
@@ -371,15 +446,14 @@ class _AdminMenuItem extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: adminText,
                       ),
                     ),
                     const SizedBox(height: 5),
                     Text(
                       subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: adminSecondary,
+                        color: secondaryColor,
                         height: 1.4,
                       ),
                     ),
@@ -387,10 +461,7 @@ class _AdminMenuItem extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: adminSecondary,
-              ),
+              Icon(Icons.chevron_right_rounded, color: secondaryColor),
             ],
           ),
         ),
@@ -406,18 +477,16 @@ class _AdminMenuItem extends StatelessWidget {
 class AdminTicketsScreen extends StatefulWidget {
   final String? initialFilter;
 
-  const AdminTicketsScreen({
-    super.key,
-    this.initialFilter,
-  });
+  const AdminTicketsScreen({super.key, this.initialFilter});
 
   @override
-  State<AdminTicketsScreen> createState() =>
-      _AdminTicketsScreenState();
+  State<AdminTicketsScreen> createState() => _AdminTicketsScreenState();
 }
 
 class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
   late String _filter;
+  List<Ticket> _tickets = [];
+  bool _isLoading = true;
 
   final List<String> _filters = [
     'All',
@@ -431,6 +500,31 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
   void initState() {
     super.initState();
     _filter = widget.initialFilter ?? 'All';
+    _loadTickets();
+  }
+
+  Future<void> _loadTickets() async {
+    if (mounted) setState(() => _isLoading = true);
+
+    try {
+      final response = await ApiService.getTickets();
+      final loaded = response
+          .whereType<Map>()
+          .map((item) => Ticket.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _tickets = loaded;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _tickets = TicketService.tickets;
+        _isLoading = false;
+      });
+    }
   }
 
   Color _priorityColor(String priority) {
@@ -442,7 +536,7 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
       case 'medium':
         return adminBlue;
       default:
-        return adminSecondary;
+        return Theme.of(context).colorScheme.onSurfaceVariant;
     }
   }
 
@@ -455,12 +549,13 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
       case 'Resolved':
         return adminGreen;
       default:
-        return adminSecondary;
+        return Theme.of(context).colorScheme.onSurfaceVariant;
     }
   }
 
   Future<void> _showTicket(Ticket ticket) async {
     String selectedStatus = ticket.status;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
 
     await showDialog<void>(
       context: context,
@@ -468,6 +563,7 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
+              backgroundColor: Theme.of(context).cardColor,
               title: Text(
                 ticket.title,
                 style: const TextStyle(fontWeight: FontWeight.w800),
@@ -477,37 +573,16 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      ticket.id,
-                      style: const TextStyle(color: adminSecondary),
-                    ),
+                    Text(ticket.id, style: TextStyle(color: secondaryColor)),
                     const SizedBox(height: 12),
                     Text(ticket.description),
                     const SizedBox(height: 18),
-                    _DetailLine(
-                      label: 'Category',
-                      value: ticket.category,
-                    ),
-                    _DetailLine(
-                      label: 'Priority',
-                      value: ticket.priority,
-                    ),
-                    _DetailLine(
-                      label: 'Impact',
-                      value: ticket.impact,
-                    ),
-                    _DetailLine(
-                      label: 'Urgency',
-                      value: ticket.urgency,
-                    ),
-                    _DetailLine(
-                      label: 'Device',
-                      value: ticket.device,
-                    ),
-                    _DetailLine(
-                      label: 'Location',
-                      value: ticket.location,
-                    ),
+                    _DetailLine(label: 'Category', value: ticket.category),
+                    _DetailLine(label: 'Priority', value: ticket.priority),
+                    _DetailLine(label: 'Impact', value: ticket.impact),
+                    _DetailLine(label: 'Urgency', value: ticket.urgency),
+                    _DetailLine(label: 'Device', value: ticket.device),
+                    _DetailLine(label: 'Location', value: ticket.location),
                     _DetailLine(
                       label: 'Technician',
                       value: ticket.assignedTechnician ?? 'Unassigned',
@@ -521,14 +596,12 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
                     DropdownButtonFormField<String>(
                       initialValue: selectedStatus,
                       isExpanded: true,
+                      dropdownColor: Theme.of(context).cardColor,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                       ),
                       items: const [
-                        DropdownMenuItem(
-                          value: 'Open',
-                          child: Text('Open'),
-                        ),
+                        DropdownMenuItem(value: 'Open', child: Text('Open')),
                         DropdownMenuItem(
                           value: 'In Progress',
                           child: Text('In Progress'),
@@ -579,26 +652,44 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: adminNavy,
-                  ),
-                  onPressed: () {
-                    final success = TicketService.updateStatus(
-                      ticket.id,
-                      selectedStatus,
-                    );
+                  style: FilledButton.styleFrom(backgroundColor: adminNavy),
+                  onPressed: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      final numericId = int.tryParse(ticket.id);
+                      if (numericId != null) {
+                        await ApiService.updateTicketStatus(
+                          ticketId: numericId,
+                          status: selectedStatus,
+                        );
+                      }
+                      TicketService.updateStatus(ticket.id, selectedStatus);
 
-                    Navigator.pop(dialogContext);
+                      if (dialogContext.mounted) {
+                        Navigator.pop(dialogContext);
+                      }
 
-                    if (success && mounted) {
-                      setState(() {});
-                      ScaffoldMessenger.of(this.context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            '${ticket.id} updated to $selectedStatus',
+                      if (mounted) {
+                        _loadTickets();
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '${ticket.ticketNumber ?? ticket.id} updated to $selectedStatus',
+                            ),
                           ),
-                        ),
-                      );
+                        );
+                      }
+                    } catch (e) {
+                      if (dialogContext.mounted) {
+                        Navigator.pop(dialogContext);
+                      }
+                      if (mounted) {
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text('Could not update status: $e'),
+                          ),
+                        );
+                      }
                     }
                   },
                   child: const Text('Save Status'),
@@ -615,7 +706,14 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final allTickets = TicketService.tickets;
+    final adminBackground = Theme.of(context).scaffoldBackgroundColor;
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
+    final allTickets = _tickets.isEmpty && !_isLoading
+        ? TicketService.tickets
+        : _tickets;
 
     final filteredTickets = _filter == 'All'
         ? allTickets
@@ -624,19 +722,23 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
     return Scaffold(
       backgroundColor: adminBackground,
       appBar: AppBar(
-        title: const Text('All Tickets'),
         backgroundColor: adminNavy,
+        title: const Text('All Tickets'),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Refresh tickets',
+            onPressed: _loadTickets,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       body: Column(
         children: [
           SizedBox(
             height: 65,
             child: ListView.separated(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               scrollDirection: Axis.horizontal,
               itemCount: _filters.length,
               separatorBuilder: (_, _) => const SizedBox(width: 8),
@@ -649,7 +751,7 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
                   onSelected: (_) => setState(() => _filter = filter),
                   selectedColor: adminNavy.withValues(alpha: 0.12),
                   labelStyle: TextStyle(
-                    color: _filter == filter ? adminNavy : adminText,
+                    color: _filter == filter ? adminNavy : null,
                     fontWeight: FontWeight.w600,
                   ),
                 );
@@ -658,17 +760,17 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
           ),
           Expanded(
             child: filteredTickets.isEmpty
-                ? const Center(
+                ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.inbox_outlined,
                           size: 52,
-                          color: adminSecondary,
+                          color: secondaryColor,
                         ),
-                        SizedBox(height: 12),
-                        Text('No tickets in this category.'),
+                        const SizedBox(height: 12),
+                        const Text('No tickets in this category.'),
                       ],
                     ),
                   )
@@ -679,14 +781,12 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
                       final ticket = filteredTickets[index];
 
                       return Card(
-                        color: Colors.white,
+                        color: cardColor,
                         elevation: 0,
                         margin: const EdgeInsets.only(bottom: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
-                          side: const BorderSide(
-                            color: Color(0xFFE4E7EC),
-                          ),
+                          side: BorderSide(color: borderColor),
                         ),
                         clipBehavior: Clip.antiAlias,
                         child: InkWell(
@@ -701,8 +801,8 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
                                     Expanded(
                                       child: Text(
                                         ticket.id,
-                                        style: const TextStyle(
-                                          color: adminSecondary,
+                                        style: TextStyle(
+                                          color: secondaryColor,
                                           fontSize: 12,
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -718,7 +818,6 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
                                 Text(
                                   ticket.title,
                                   style: const TextStyle(
-                                    color: adminText,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 16,
                                   ),
@@ -734,32 +833,32 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
                                     ),
                                     _Pill(
                                       label: ticket.category,
-                                      color: adminSecondary,
+                                      color: secondaryColor,
                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 12),
                                 Row(
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       Icons.person_outline,
                                       size: 16,
-                                      color: adminSecondary,
+                                      color: secondaryColor,
                                     ),
                                     const SizedBox(width: 5),
                                     Expanded(
                                       child: Text(
                                         ticket.assignedTechnician ??
                                             'Unassigned',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 12,
-                                          color: adminSecondary,
+                                          color: secondaryColor,
                                         ),
                                       ),
                                     ),
-                                    const Icon(
+                                    Icon(
                                       Icons.chevron_right_rounded,
-                                      color: adminSecondary,
+                                      color: secondaryColor,
                                     ),
                                   ],
                                 ),
@@ -777,43 +876,200 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
   }
 }
 
-
- 
- // ============================================================
- // USERS AND TECHNICIANS — ACCOUNT MANAGEMENT
- // ============================================================
+// ============================================================
+// USERS AND TECHNICIANS — ACCOUNT MANAGEMENT
+// ============================================================
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
 
   @override
+  State<AdminUsersScreen> createState() => _AdminUsersScreenState();
+}
+
+class _AdminUsersScreenState extends State<AdminUsersScreen> {
+  List<dynamic> _users = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+  String _selectedFilter = 'All';
+
+  final Set<int> _updatingUserIds = {};
+
+  final List<String> _filters = ['All', 'Pending', 'Approved', 'Rejected'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsers();
+  }
+
+  Future<void> _loadUsers() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      debugPrint('ADMIN USERS: Starting request...');
+      final users = await ApiService.getAllUsers();
+
+      debugPrint('ADMIN USERS: Received ${users.length} users');
+      debugPrint('ADMIN USERS: Data = $users');
+
+      if (!mounted) return;
+      setState(() {
+        _users = users;
+        _isLoading = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('ADMIN USERS ERROR: $error');
+      debugPrint('ADMIN USERS STACK TRACE: $stackTrace');
+
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = error.toString().replaceFirst('Exception: ', '');
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _approvalStatus(Map<String, dynamic> user) {
+    final status = (user['approval_status'] ?? 'Pending').toString().trim();
+
+    if (status.toLowerCase() == 'approved') return 'Approved';
+    if (status.toLowerCase() == 'rejected') return 'Rejected';
+    if (status.toLowerCase() == 'pending') return 'Pending';
+
+    return status.isEmpty ? 'Pending' : status;
+  }
+
+  int _countFor(String status) {
+    if (status == 'All') return _users.length;
+
+    return _users.where((item) {
+      if (item is! Map) return false;
+
+      return _approvalStatus(Map<String, dynamic>.from(item)).toLowerCase() ==
+          status.toLowerCase();
+    }).length;
+  }
+
+  List<Map<String, dynamic>> get _filteredUsers {
+    final result = <Map<String, dynamic>>[];
+
+    for (final item in _users) {
+      if (item is! Map) continue;
+
+      final user = Map<String, dynamic>.from(item);
+      final status = _approvalStatus(user);
+
+      if (_selectedFilter == 'All' ||
+          status.toLowerCase() == _selectedFilter.toLowerCase()) {
+        result.add(user);
+      }
+    }
+
+    result.sort((a, b) {
+      final nameA = (a['full_name'] ?? a['email'] ?? '')
+          .toString()
+          .toLowerCase();
+      final nameB = (b['full_name'] ?? b['email'] ?? '')
+          .toString()
+          .toLowerCase();
+
+      return nameA.compareTo(nameB);
+    });
+
+    return result;
+  }
+
+  Future<void> _updateApproval(Map<String, dynamic> user, String status) async {
+    final dynamic rawId = user['id'] ?? user['user_id'];
+    final int? userId = rawId is int
+        ? rawId
+        : int.tryParse(rawId?.toString() ?? '');
+
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not identify this account.')),
+      );
+      return;
+    }
+
+    setState(() => _updatingUserIds.add(userId));
+
+    try {
+      await ApiService.updateUserApproval(
+        userId: userId,
+        approvalStatus: status,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        for (final item in _users) {
+          if (item is! Map) continue;
+
+          final dynamic itemId = item['id'] ?? item['user_id'];
+
+          if (itemId.toString() == userId.toString()) {
+            item['approval_status'] = status;
+            break;
+          }
+        }
+
+        _updatingUserIds.remove(userId);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            status == 'Approved'
+                ? 'Account approved successfully.'
+                : 'Account rejected successfully.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() => _updatingUserIds.remove(userId));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
+  }
+
+  Color _statusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'approved':
+        return adminGreen;
+      case 'pending':
+        return adminAmber;
+      case 'rejected':
+        return adminRed;
+      default:
+        return Theme.of(context).colorScheme.onSurfaceVariant;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final users = [
-      (
-        'Reporter',
-        'reporter@triagedesk.com',
-        Icons.person_outline,
-        adminBlue,
-      ),
-      (
-        'Technician',
-        'technician@triagedesk.com',
-        Icons.support_agent,
-        adminGreen,
-      ),
-      (
-        'Administrator',
-        'admin@triagedesk.com',
-        Icons.admin_panel_settings_outlined,
-        const Color(0xFF7C3AED),
-      ),
-    ];
+    final adminBackground = Theme.of(context).scaffoldBackgroundColor;
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
+    final visibleUsers = _filteredUsers;
 
     return Scaffold(
       backgroundColor: adminBackground,
       appBar: AppBar(
-        title: const Text('Users and Technicians'),
         backgroundColor: adminNavy,
+        title: const Text('Users and Technicians'),
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -831,19 +1087,12 @@ class AdminUsersScreen extends StatefulWidget {
           children: [
             const Text(
               'User Management',
-              style: TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.w800,
-                color: adminText,
-              ),
+              style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'View registered accounts and manage registration approvals.',
-              style: TextStyle(
-                color: adminSecondary,
-                height: 1.5,
-              ),
+              style: TextStyle(color: secondaryColor, height: 1.5),
             ),
             const SizedBox(height: 20),
 
@@ -894,11 +1143,7 @@ class AdminUsersScreen extends StatefulWidget {
               const SizedBox(height: 24),
               const Text(
                 'Filter accounts',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: adminText,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -914,9 +1159,7 @@ class AdminUsersScreen extends StatefulWidget {
                       },
                       selectedColor: adminNavy.withValues(alpha: 0.12),
                       labelStyle: TextStyle(
-                        color: _selectedFilter == filter
-                            ? adminNavy
-                            : adminText,
+                        color: _selectedFilter == filter ? adminNavy : null,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -932,7 +1175,11 @@ class AdminUsersScreen extends StatefulWidget {
               )
             else if (_errorMessage != null)
               Card(
-                color: Colors.white,
+                color: cardColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(color: borderColor),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -943,10 +1190,7 @@ class AdminUsersScreen extends StatefulWidget {
                         size: 42,
                       ),
                       const SizedBox(height: 12),
-                      Text(
-                        _errorMessage!,
-                        textAlign: TextAlign.center,
-                      ),
+                      Text(_errorMessage!, textAlign: TextAlign.center),
                       const SizedBox(height: 14),
                       FilledButton(
                         onPressed: _loadUsers,
@@ -958,7 +1202,11 @@ class AdminUsersScreen extends StatefulWidget {
               )
             else if (visibleUsers.isEmpty)
               Card(
-                color: Colors.white,
+                color: cardColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(color: borderColor),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
@@ -971,7 +1219,7 @@ class AdminUsersScreen extends StatefulWidget {
                             ? Icons.verified_user_outlined
                             : Icons.people_outline_rounded,
                         size: 48,
-                        color: adminSecondary,
+                        color: secondaryColor,
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -981,14 +1229,13 @@ class AdminUsersScreen extends StatefulWidget {
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 17,
-                          color: adminText,
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         'Try another filter or refresh the list.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: adminSecondary),
+                        style: TextStyle(color: secondaryColor),
                       ),
                     ],
                   ),
@@ -1001,11 +1248,11 @@ class AdminUsersScreen extends StatefulWidget {
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
-                  color: adminText,
                 ),
               ),
               const SizedBox(height: 12),
-              for (final user in visibleUsers) _buildUserCard(user),
+              for (final user in visibleUsers)
+                _buildUserCard(user, cardColor, borderColor, secondaryColor),
             ],
           ],
         ),
@@ -1013,18 +1260,17 @@ class AdminUsersScreen extends StatefulWidget {
     );
   }
 
-  Widget _summaryCard(
-    String title,
-    int count,
-    Color color,
-    IconData icon,
-  ) {
+  Widget _summaryCard(String title, int count, Color color, IconData icon) {
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: const Color(0xFFE4E7EC)),
+        border: Border.all(color: borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1033,17 +1279,13 @@ class AdminUsersScreen extends StatefulWidget {
           const SizedBox(height: 12),
           Text(
             '$count',
-            style: const TextStyle(
-              color: adminText,
-              fontSize: 25,
-              fontWeight: FontWeight.w800,
-            ),
+            style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
             title,
-            style: const TextStyle(
-              color: adminSecondary,
+            style: TextStyle(
+              color: secondaryColor,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -1053,13 +1295,18 @@ class AdminUsersScreen extends StatefulWidget {
     );
   }
 
-  Widget _buildUserCard(Map<String, dynamic> user) {
-    final name = (
-      user['full_name'] ??
-      user['name'] ??
-      user['username'] ??
-      'Unnamed user'
-    ).toString();
+  Widget _buildUserCard(
+    Map<String, dynamic> user,
+    Color cardColor,
+    Color borderColor,
+    Color secondaryColor,
+  ) {
+    final name =
+        (user['full_name'] ??
+                user['name'] ??
+                user['username'] ??
+                'Unnamed user')
+            .toString();
 
     final email = (user['email'] ?? 'No email provided').toString();
     final role = (user['role'] ?? 'Reporter').toString();
@@ -1070,25 +1317,24 @@ class AdminUsersScreen extends StatefulWidget {
         ? rawId
         : int.tryParse(rawId?.toString() ?? '');
 
-    final isUpdating =
-        userId != null && _updatingUserIds.contains(userId);
+    final isUpdating = userId != null && _updatingUserIds.contains(userId);
     final isPending = status.toLowerCase() == 'pending';
 
     final roleColor = role.toLowerCase() == 'technician'
         ? adminGreen
         : role.toLowerCase() == 'administrator'
-            ? adminNavy
-            : adminBlue;
+        ? adminNavy
+        : adminBlue;
 
     final statusColor = _statusColor(status);
 
     return Card(
-      color: Colors.white,
+      color: cardColor,
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 14),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE4E7EC)),
+        side: BorderSide(color: borderColor),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1105,8 +1351,8 @@ class AdminUsersScreen extends StatefulWidget {
                     role.toLowerCase() == 'technician'
                         ? Icons.support_agent_rounded
                         : role.toLowerCase() == 'administrator'
-                            ? Icons.admin_panel_settings_outlined
-                            : Icons.person_outline_rounded,
+                        ? Icons.admin_panel_settings_outlined
+                        : Icons.person_outline_rounded,
                     color: roleColor,
                   ),
                 ),
@@ -1118,7 +1364,6 @@ class AdminUsersScreen extends StatefulWidget {
                       Text(
                         name,
                         style: const TextStyle(
-                          color: adminText,
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
@@ -1126,10 +1371,7 @@ class AdminUsersScreen extends StatefulWidget {
                       const SizedBox(height: 5),
                       Text(
                         email,
-                        style: const TextStyle(
-                          color: adminSecondary,
-                          fontSize: 13,
-                        ),
+                        style: TextStyle(color: secondaryColor, fontSize: 13),
                       ),
                       const SizedBox(height: 10),
                       Wrap(
@@ -1177,9 +1419,7 @@ class AdminUsersScreen extends StatefulWidget {
                               ),
                             )
                           : const Icon(Icons.check_rounded),
-                      label: Text(
-                        isUpdating ? 'Updating...' : 'Approve',
-                      ),
+                      label: Text(isUpdating ? 'Updating...' : 'Approve'),
                       style: FilledButton.styleFrom(
                         backgroundColor: adminGreen,
                         foregroundColor: Colors.white,
@@ -1196,24 +1436,65 @@ class AdminUsersScreen extends StatefulWidget {
   }
 }
 
-
-
 // ============================================================
 // SLA MONITORING — PROVISIONAL AGE-BASED MONITORING
 // ============================================================
 
-class AdminSlaScreen extends StatelessWidget {
+class AdminSlaScreen extends StatefulWidget {
   const AdminSlaScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
+  State<AdminSlaScreen> createState() => _AdminSlaScreenState();
+}
 
-    final activeTickets = TicketService.tickets.where((ticket) {
-      return ticket.status != 'Resolved' &&
-          ticket.status != 'Closed';
-    }).toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+class _AdminSlaScreenState extends State<AdminSlaScreen> {
+  List<Ticket> _tickets = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTickets();
+  }
+
+  Future<void> _loadTickets() async {
+    if (mounted) setState(() => _isLoading = true);
+
+    try {
+      final response = await ApiService.getTickets();
+      final loaded = response
+          .whereType<Map>()
+          .map((item) => Ticket.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _tickets = loaded;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _tickets = TicketService.tickets;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final adminBackground = Theme.of(context).scaffoldBackgroundColor;
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+
+    final now = DateTime.now();
+    final allTickets = _tickets.isEmpty && !_isLoading
+        ? TicketService.tickets
+        : _tickets;
+
+    final activeTickets = allTickets.where((ticket) {
+      return ticket.status != 'Resolved' && ticket.status != 'Closed';
+    }).toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     final atRisk = activeTickets.where((ticket) {
       return now.difference(ticket.createdAt).inHours >= 24;
@@ -1222,22 +1503,24 @@ class AdminSlaScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: adminBackground,
       appBar: AppBar(
-        title: const Text('SLA Monitoring'),
         backgroundColor: adminNavy,
+        title: const Text('SLA Monitoring'),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Refresh tickets',
+            onPressed: _loadTickets,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           const Text(
             'Unresolved Tickets',
-            style: TextStyle(
-              fontSize: 25,
-              fontWeight: FontWeight.w800,
-              color: adminText,
-            ),
+            style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
           ),
-          
           const SizedBox(height: 20),
           Row(
             children: [
@@ -1262,8 +1545,14 @@ class AdminSlaScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           if (activeTickets.isEmpty)
-            const Card(
-              child: Padding(
+            Card(
+              color: cardColor,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: borderColor),
+              ),
+              child: const Padding(
                 padding: EdgeInsets.all(22),
                 child: Text('There are no unresolved tickets.'),
               ),
@@ -1271,12 +1560,12 @@ class AdminSlaScreen extends StatelessWidget {
           else
             for (final ticket in activeTickets)
               Card(
-                color: Colors.white,
+                color: cardColor,
                 elevation: 0,
                 margin: const EdgeInsets.only(bottom: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: Color(0xFFE4E7EC)),
+                  side: BorderSide(color: borderColor),
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.all(15),
@@ -1284,10 +1573,9 @@ class AdminSlaScreen extends StatelessWidget {
                     now.difference(ticket.createdAt).inHours >= 24
                         ? Icons.warning_amber_rounded
                         : Icons.schedule_rounded,
-                    color:
-                        now.difference(ticket.createdAt).inHours >= 24
-                            ? adminRed
-                            : adminBlue,
+                    color: now.difference(ticket.createdAt).inHours >= 24
+                        ? adminRed
+                        : adminBlue,
                   ),
                   title: Text(
                     ticket.title,
@@ -1301,20 +1589,21 @@ class AdminSlaScreen extends StatelessWidget {
                     ),
                   ),
                   isThreeLine: true,
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => AdminTicketsScreen(
-                          initialFilter: ticket.status,
-                        ),
+                        builder: (_) =>
+                            AdminTicketsScreen(initialFilter: ticket.status),
                       ),
                     );
                   },
                 ),
               ),
-       
         ],
       ),
     );
@@ -1325,23 +1614,65 @@ class AdminSlaScreen extends StatelessWidget {
 // REPORTS AND ANALYTICS
 // ============================================================
 
-class AdminReportsScreen extends StatelessWidget {
+class AdminReportsScreen extends StatefulWidget {
   const AdminReportsScreen({super.key});
 
   @override
+  State<AdminReportsScreen> createState() => _AdminReportsScreenState();
+}
+
+class _AdminReportsScreenState extends State<AdminReportsScreen> {
+  List<Ticket> _tickets = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTickets();
+  }
+
+  Future<void> _loadTickets() async {
+    if (mounted) setState(() => _isLoading = true);
+
+    try {
+      final response = await ApiService.getTickets();
+      final loaded = response
+          .whereType<Map>()
+          .map((item) => Ticket.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _tickets = loaded;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _tickets = TicketService.tickets;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final tickets = TicketService.tickets;
+    final adminBackground = Theme.of(context).scaffoldBackgroundColor;
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
+    final tickets = _tickets.isEmpty && !_isLoading
+        ? TicketService.tickets
+        : _tickets;
     final total = tickets.length;
 
     final open = tickets.where((t) => t.status == 'Open').length;
-    final inProgress =
-        tickets.where((t) => t.status == 'In Progress').length;
-    final resolved =
-        tickets.where((t) => t.status == 'Resolved').length;
+    final inProgress = tickets.where((t) => t.status == 'In Progress').length;
+    final resolved = tickets.where((t) => t.status == 'Resolved').length;
     final closed = tickets.where((t) => t.status == 'Closed').length;
 
-    final critical =
-        tickets.where((t) => t.priority == 'Critical').length;
+    final critical = tickets.where((t) => t.priority == 'Critical').length;
     final high = tickets.where((t) => t.priority == 'High').length;
     final medium = tickets.where((t) => t.priority == 'Medium').length;
     final low = tickets.where((t) => t.priority == 'Low').length;
@@ -1349,15 +1680,14 @@ class AdminReportsScreen extends StatelessWidget {
     final categories = <String, int>{};
 
     for (final ticket in tickets) {
-      categories[ticket.category] =
-          (categories[ticket.category] ?? 0) + 1;
+      categories[ticket.category] = (categories[ticket.category] ?? 0) + 1;
     }
 
     return Scaffold(
       backgroundColor: adminBackground,
       appBar: AppBar(
-        title: const Text('Reports and Analytics'),
         backgroundColor: adminNavy,
+        title: const Text('Reports and Analytics'),
         foregroundColor: Colors.white,
       ),
       body: ListView(
@@ -1365,16 +1695,12 @@ class AdminReportsScreen extends StatelessWidget {
         children: [
           const Text(
             'Ticket Analytics',
-            style: TextStyle(
-              fontSize: 25,
-              fontWeight: FontWeight.w800,
-              color: adminText,
-            ),
+            style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'A summary of the tickets currently available in TriageDesk.',
-            style: TextStyle(color: adminSecondary),
+            style: TextStyle(color: secondaryColor),
           ),
           const SizedBox(height: 20),
           _ReportCard(
@@ -1383,7 +1709,7 @@ class AdminReportsScreen extends StatelessWidget {
               _ReportRow('Open', open, total, adminAmber),
               _ReportRow('In Progress', inProgress, total, adminBlue),
               _ReportRow('Resolved', resolved, total, adminGreen),
-              _ReportRow('Closed', closed, total, adminSecondary),
+              _ReportRow('Closed', closed, total, secondaryColor),
             ],
           ),
           const SizedBox(height: 16),
@@ -1393,7 +1719,7 @@ class AdminReportsScreen extends StatelessWidget {
               _ReportRow('Critical', critical, total, adminRed),
               _ReportRow('High', high, total, adminAmber),
               _ReportRow('Medium', medium, total, adminBlue),
-              _ReportRow('Low', low, total, adminSecondary),
+              _ReportRow('Low', low, total, secondaryColor),
             ],
           ),
           const SizedBox(height: 16),
@@ -1401,22 +1727,18 @@ class AdminReportsScreen extends StatelessWidget {
             title: 'Issues by Category',
             rows: categories.entries
                 .map(
-                  (entry) => _ReportRow(
-                    entry.key,
-                    entry.value,
-                    total,
-                    adminNavy,
-                  ),
+                  (entry) =>
+                      _ReportRow(entry.key, entry.value, total, adminNavy),
                 )
                 .toList(),
           ),
           const SizedBox(height: 16),
           Card(
-            color: Colors.white,
+            color: cardColor,
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: const BorderSide(color: Color(0xFFE4E7EC)),
+              side: BorderSide(color: borderColor),
             ),
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -1425,16 +1747,10 @@ class AdminReportsScreen extends StatelessWidget {
                 children: [
                   const Text(
                     'Summary',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 12),
-                  _DetailLine(
-                    label: 'Total tickets',
-                    value: '$total',
-                  ),
+                  _DetailLine(label: 'Total tickets', value: '$total'),
                   _DetailLine(
                     label: 'Unresolved tickets',
                     value: '${open + inProgress}',
@@ -1450,15 +1766,11 @@ class AdminReportsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'These figures use the current in-memory ticket list. '
             'Historical trends, average resolution time, downloadable '
             'reports and persistent analytics are not implemented yet.',
-            style: TextStyle(
-              fontSize: 12,
-              color: adminSecondary,
-              height: 1.5,
-            ),
+            style: TextStyle(fontSize: 12, color: secondaryColor, height: 1.5),
           ),
         ],
       ),
@@ -1470,19 +1782,21 @@ class _ReportCard extends StatelessWidget {
   final String title;
   final List<_ReportRow> rows;
 
-  const _ReportCard({
-    required this.title,
-    required this.rows,
-  });
+  const _ReportCard({required this.title, required this.rows});
 
   @override
   Widget build(BuildContext context) {
+    final cardColor = Theme.of(context).cardColor;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final progressBg = Theme.of(context).colorScheme.outlineVariant
+        .withValues(alpha: 0.45);
+
     return Card(
-      color: Colors.white,
+      color: cardColor,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE4E7EC)),
+        side: BorderSide(color: borderColor),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1491,28 +1805,16 @@ class _ReportCard extends StatelessWidget {
           children: [
             Text(
               title,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: adminText,
-              ),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 18),
             for (final row in rows) ...[
               Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      row.label,
-                      style: const TextStyle(color: adminText),
-                    ),
-                  ),
+                  Expanded(child: Text(row.label)),
                   Text(
                     '${row.value}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: adminText,
-                    ),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
@@ -1522,7 +1824,7 @@ class _ReportCard extends StatelessWidget {
                 child: LinearProgressIndicator(
                   minHeight: 7,
                   value: row.total == 0 ? 0 : row.value / row.total,
-                  backgroundColor: const Color(0xFFEAECF0),
+                  backgroundColor: progressBg,
                   valueColor: AlwaysStoppedAnimation<Color>(row.color),
                 ),
               ),
@@ -1541,30 +1843,19 @@ class _ReportRow {
   final int total;
   final Color color;
 
-  const _ReportRow(
-    this.label,
-    this.value,
-    this.total,
-    this.color,
-  );
+  const _ReportRow(this.label, this.value, this.total, this.color);
 }
 
 class _Pill extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _Pill({
-    required this.label,
-    required this.color,
-  });
+  const _Pill({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(30),
@@ -1585,13 +1876,12 @@ class _DetailLine extends StatelessWidget {
   final String label;
   final String value;
 
-  const _DetailLine({
-    required this.label,
-    required this.value,
-  });
+  const _DetailLine({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: Row(
@@ -1601,20 +1891,13 @@ class _DetailLine extends StatelessWidget {
             width: 105,
             child: Text(
               label,
-              style: const TextStyle(
-                color: adminSecondary,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: secondaryColor, fontSize: 13),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                color: adminText,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             ),
           ),
         ],

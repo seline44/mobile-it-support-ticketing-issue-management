@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'reporter_dashboard.dart';
 import 'technician_dashboard.dart';
 import 'admin_dashboard.dart';
@@ -8,10 +9,10 @@ class RoleSelectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Select Role'),
-      ),
+      appBar: AppBar(title: const Text('Select Role')),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -22,21 +23,15 @@ class RoleSelectionScreen extends StatelessWidget {
             const Text(
               'Choose your workspace',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 10),
 
-            const Text(
+            Text(
               'Select a role to continue.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.black54,
-                fontSize: 15,
-              ),
+              style: TextStyle(color: secondaryColor, fontSize: 15),
             ),
 
             const SizedBox(height: 40),
@@ -87,28 +82,19 @@ class RoleSelectionScreen extends StatelessWidget {
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (context) => destination,
-            ),
+            MaterialPageRoute(builder: (context) => destination),
           );
         },
         style: OutlinedButton.styleFrom(
           alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 12,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 35,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            Icon(icon, size: 35, color: Theme.of(context).colorScheme.primary),
 
             const SizedBox(width: 18),
 
@@ -127,9 +113,9 @@ class RoleSelectionScreen extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: Colors.black54,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
