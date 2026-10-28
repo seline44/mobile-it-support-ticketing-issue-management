@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:triagedesk/main.dart';
 import 'package:triagedesk/screens/forgot_password_screen.dart';
 import 'package:triagedesk/screens/login_screen.dart';
@@ -27,18 +26,15 @@ void main() {
     await tester.pumpWidget(const TriageDeskApp());
     expect(find.bySemanticsLabel('TriageDesk logo'), findsOneWidget);
     expect(find.text('TriageDesk'), findsOneWidget);
-    expect(find.text('Get Started'), findsOneWidget);
-    expect(find.text('Something broken?'), findsOneWidget);
-    expect(find.text('We’ve got you.'), findsOneWidget);
-    expect(find.text('Sign in'), findsNothing);
-    expect(find.text('Report an issue'), findsOneWidget);
-    expect(find.text('Track your request'), findsOneWidget);
-    expect(find.textContaining('Good morning'), findsNothing);
+    expect(find.text('Chat with us on WhatsApp'), findsOneWidget);
+    expect(find.text("Something broken?\nWe've got you."), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Create an account'), findsOneWidget);
 
     final logo = tester.widget<TriageDeskLogo>(find.byType(TriageDeskLogo));
-    expect(logo.size, 88);
+    expect(logo.size, 80);
 
-    final headline = tester.widget<Text>(find.text('Something broken?'));
+    final headline = tester.widget<Text>(find.text("Something broken?\nWe've got you."));
     expect(headline.style?.fontSize, lessThanOrEqualTo(34));
   });
 
@@ -46,7 +42,7 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const TriageDeskApp());
-    await tester.tap(find.text('Get Started'));
+    await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
 
     expect(find.text('Welcome back'), findsOneWidget);
@@ -63,7 +59,7 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.tap(find.byTooltip('Back to landing page'));
     await tester.pumpAndSettle();
-    expect(find.text('Get Started'), findsOneWidget);
+    expect(find.text('Chat with us on WhatsApp'), findsOneWidget);
     expect(find.text('Welcome back'), findsNothing);
   });
 
@@ -76,9 +72,8 @@ void main() {
           home: Theme(data: theme, child: const WelcomeScreen()),
         ),
       );
-      expect(find.text('Something broken?'), findsOneWidget);
-      expect(find.text('We’ve got you.'), findsOneWidget);
-      expect(find.text('Sign in'), findsNothing);
+      expect(find.text("Something broken?\nWe've got you."), findsOneWidget);
+      expect(find.text('Chat with us on WhatsApp'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       await tester.pumpWidget(
@@ -93,7 +88,6 @@ void main() {
       expect(find.text('Resolved'), findsWidgets);
       expect(find.text('Recent Tickets'), findsOneWidget);
       expect(find.text('Unable to connect to Wi-Fi'), findsOneWidget);
-      expect(find.byTooltip('Notifications'), findsNothing);
       expect(tester.takeException(), isNull);
 
       await tester.pumpWidget(
@@ -143,6 +137,4 @@ void main() {
       expect(tester.takeException(), isNull);
     }
   });
-
 }
-

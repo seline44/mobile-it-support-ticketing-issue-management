@@ -1057,46 +1057,48 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
 
     final controller = TextEditingController();
-    final formKey = GlobalKey<FormState>();
     final phoneNumber = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Link WhatsApp number'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Reporter phone number',
-              hintText: '+254794045207',
-              helperText: 'Use international format, starting with +.',
+      builder: (dialogContext) {
+        String? validationError;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Link WhatsApp number'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: 'Reporter phone number',
+                hintText: '+254794045207',
+                helperText: 'Use international format, starting with +.',
+                errorText: validationError,
+              ),
             ),
-            validator: (value) {
-              final phone = value?.trim() ?? '';
-              if (!RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(phone)) {
-                return 'Enter a valid international number.';
-              }
-              return null;
-            },
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final phone = controller.text.trim();
+                  if (!RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(phone)) {
+                    setDialogState(
+                      () => validationError =
+                          'Enter a valid international number.',
+                    );
+                    return;
+                  }
+                  Navigator.pop(dialogContext, phone);
+                },
+                child: const Text('Link number'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(dialogContext, controller.text.trim());
-              }
-            },
-            child: const Text('Link number'),
-          ),
-        ],
-      ),
+        );
+      },
     );
     controller.dispose();
 

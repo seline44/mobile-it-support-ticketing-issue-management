@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'screens/login_screen.dart';
+import 'screens/register_screen.dart';
 import 'services/theme_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/triagedesk_logo.dart';
@@ -35,151 +37,184 @@ class TriageDeskApp extends StatelessWidget {
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
+  Future<void> _launchWhatsApp(BuildContext context) async {
+    final uri = Uri.parse('https://wa.me/254700000000?text=Hi,%20I%20need%20help%20with%20a%20TriageDesk%20issue.');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open WhatsApp. Please check your browser or device.')),
+        );
+      }
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open WhatsApp.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final background = isDark
-        ? const Color(0xFF08191D)
-        : const Color(0xFFF2F8FA);
+    final background = isDark ? const Color(0xFF08191D) : const Color(0xFFF2F8FA);
 
     return Scaffold(
       backgroundColor: background,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(22, 16, 22, 16),
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
             child: Center(
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   maxWidth: 440,
-                  minHeight: constraints.maxHeight - 20,
+                  minHeight: constraints.maxHeight - 40,
                 ),
                 child: IntrinsicHeight(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       const SizedBox(height: 12),
-                      const TriageDeskLogo(size: 88),
-                      const SizedBox(height: 8),
+                      const TriageDeskLogo(size: 80),
+                      const SizedBox(height: 10),
                       Text.rich(
                         TextSpan(
                           children: [
-                            TextSpan(
-                              text: 'Triage',
-                              style: TextStyle(color: colors.onSurface),
-                            ),
-                            TextSpan(
-                              text: 'Desk',
-                              style: TextStyle(color: colors.primary),
-                            ),
+                            TextSpan(text: 'Triage', style: TextStyle(color: colors.onSurface)),
+                            TextSpan(text: 'Desk', style: TextStyle(color: colors.primary)),
                           ],
                         ),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 20,
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.3),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'IT SUPPORT, MADE SIMPLE',
+                        style: TextStyle(
+                          color: colors.primary,
+                          fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          letterSpacing: -0.3,
+                          letterSpacing: 1.2,
                         ),
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        'Something broken?',
+                        'Something broken?\nWe\'ve got you.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: colors.onSurface,
-                          fontSize: 27,
+                          fontSize: 26,
                           fontWeight: FontWeight.bold,
+                          height: 1.2,
                           letterSpacing: -0.5,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 10),
                       Text(
-                        'We’ve got you.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: colors.onSurfaceVariant,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Report an issue, track its progress, and stay informed every step of the way.',
+                        'Get IT help your way. Report an issue, track a request, or chat with our support team.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: colors.onSurfaceVariant,
                           fontSize: 14,
-                          height: 1.4,
+                          height: 1.5,
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      _ActionCard(
-                        icon: Icons.assignment_outlined,
-                        title: 'Report an issue',
-                        subtitle: 'Tell us what needs attention.',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const LoginScreen(),
-                            ),
-                          );
-                        },
+                      const SizedBox(height: 32),
+
+                      // Primary CTA: Chat with us on WhatsApp
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: FilledButton.icon(
+                          onPressed: () => _launchWhatsApp(context),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF25D366), // WhatsApp green
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                          ),
+                          icon: const Icon(Icons.chat_rounded, size: 20),
+                          label: const Text(
+                            'Chat with us on WhatsApp',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                      _ActionCard(
-                        icon: Icons.track_changes_rounded,
-                        title: 'Track your request',
-                        subtitle: 'Stay updated until resolution.',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const LoginScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      const Spacer(),
                       const SizedBox(height: 16),
+
+                      // Divider / "or"
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: colors.outlineVariant)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text('or', style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
+                          ),
+                          Expanded(child: Divider(color: colors.outlineVariant)),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Secondary CTA: Sign in
                       SizedBox(
                         width: double.infinity,
                         height: 50,
-                        child: FilledButton(
+                        child: OutlinedButton(
                           onPressed: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => const LoginScreen(),
-                              ),
+                              MaterialPageRoute(builder: (_) => const LoginScreen()),
                             );
                           },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: colors.primary,
-                            foregroundColor: colors.onPrimary,
-                            shape: const StadiumBorder(),
-                            elevation: 0,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: colors.onSurface,
+                            side: BorderSide(color: colors.outlineVariant),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           ),
-                          child: const Row(
+                          child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(
-                                'Get Started',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              Icon(Icons.arrow_forward_rounded, size: 18),
+                              const Text('Sign in', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                              Text('Already have an account?', style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant)),
                             ],
                           ),
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
+
+                      // Tertiary CTA: Create an account
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: colors.primary,
+                            side: BorderSide(color: colors.primary.withValues(alpha: 0.5)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('Create an account', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                              Text('Access your personal ticket history', style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant)),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const Spacer(),
+                      const SizedBox(height: 24),
                       Text(
-                        'Simple. Organized. Responsive.',
+                        'Quick help · Ticket tracking · Technician support',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           color: colors.onSurfaceVariant,
                           fontSize: 12,
@@ -191,86 +226,6 @@ class WelcomeScreen extends StatelessWidget {
                 ),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _ActionCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = isDark ? const Color(0xFF122D33) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF29464D) : const Color(0xFFE2EDF0);
-
-    return Material(
-      color: cardColor,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: colors.primary, size: 19),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: colors.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: colors.onSurfaceVariant,
-                size: 20,
-              ),
-            ],
           ),
         ),
       ),
