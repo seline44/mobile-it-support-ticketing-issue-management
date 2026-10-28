@@ -243,6 +243,23 @@ class ApiService {
     throw Exception(_error(decoded, 'Could not load users'));
   }
 
+  static Future<Map<String, dynamic>> linkWhatsAppNumber({
+    required int userId,
+    required String phoneNumber,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/admin/users/$userId/whatsapp'),
+      headers: _headers,
+      body: jsonEncode({'phone_number': phoneNumber.trim()}),
+    );
+
+    final decoded = _decode(response);
+    if (response.statusCode == 200 && decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    throw Exception(_error(decoded, 'Could not link WhatsApp number'));
+  }
+
   static Future<String> forgotPassword({
     required String email,
   }) async {

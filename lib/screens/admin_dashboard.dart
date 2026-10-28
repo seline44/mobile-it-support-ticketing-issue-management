@@ -1043,6 +1043,103 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
   }
 
+  Future<void> _linkWhatsAppNumber(Map<String, dynamic> user) async {
+    final dynamic rawId = user['id'] ?? user['user_id'];
+    final int? userId = rawId is int
+        ? rawId
+        : int.tryParse(rawId?.toString() ?? '');
+
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not identify this account.')),
+      );
+      return;
+    }
+
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final phoneNumber = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Link WhatsApp number'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Reporter phone number',
+              hintText: '+254794045207',
+              helperText: 'Use international format, starting with +.',
+            ),
+            validator: (value) {
+              final phone = value?.trim() ?? '';
+              if (!RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(phone)) {
+                return 'Enter a valid international number.';
+              }
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, controller.text.trim());
+              }
+            },
+            child: const Text('Link number'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (phoneNumber == null) return;
+
+    setState(() => _updatingUserIds.add(userId));
+    try {
+      final result = await ApiService.linkWhatsAppNumber(
+        userId: userId,
+        phoneNumber: phoneNumber,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        for (final item in _users) {
+          if (item is! Map) continue;
+          final dynamic itemId = item['id'] ?? item['user_id'];
+          if (itemId.toString() == userId.toString()) {
+            item['whatsapp_phone_number'] = result['phone_number'];
+            break;
+          }
+        }
+        _updatingUserIds.remove(userId);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result['message']?.toString() ?? 'WhatsApp number linked.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _updatingUserIds.remove(userId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
+  }
+
   Color _statusColor(String status) {
     switch (status.toLowerCase()) {
       case 'approved':
@@ -1319,6 +1416,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
 
     final isUpdating = userId != null && _updatingUserIds.contains(userId);
     final isPending = status.toLowerCase() == 'pending';
+    final canLinkWhatsApp =
+        role.toLowerCase() == 'reporter' && status.toLowerCase() == 'approved';
+    final linkedWhatsAppNumber = user['whatsapp_phone_number']?.toString();
 
     final roleColor = role.toLowerCase() == 'technician'
         ? adminGreen
@@ -1427,6 +1527,30 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     ),
                   ),
                 ],
+              ),
+            ],
+            if (canLinkWhatsApp) ...[
+              const SizedBox(height: 12),
+              if (linkedWhatsAppNumber != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'WhatsApp linked: $linkedWhatsAppNumber',
+                    style: TextStyle(color: secondaryColor, fontSize: 13),
+                  ),
+                ),
+              OutlinedButton.icon(
+                onPressed: isUpdating || userId == null
+                    ? null
+                    : () => _linkWhatsAppNumber(user),
+                icon: isUpdating
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.chat_outlined),
+                label: Text(isUpdating ? 'Linking...' : 'Link WhatsApp'),
               ),
             ],
           ],
