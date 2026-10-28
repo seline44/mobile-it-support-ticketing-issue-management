@@ -15,6 +15,7 @@ from models import (
     TicketHistory,
     User,
     WhatsAppContact,
+    WhatsAppConversation,
     WhatsAppMessage,
 )
 from whatsapp import (
@@ -108,7 +109,19 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         self.assertEqual(self.db.query(WhatsAppMessage).count(), 4)
         self.assertEqual(self.db.query(Ticket).count(), 1)
 
-    def test_unlinked_number_cannot_create_a_ticket(self):
+    def test_acknowledgement_after_ticket_does_not_start_another_conversation(self):
+        self.send("wamid.1", "My WiFi is not working.")
+        self.send("wamid.2", "Network")
+        self.send("wamid.3", "High")
+        self.send("wamid.4", "High")
+
+        response = self.send("wamid.5", "Okay")
+
+        self.assertIn("Describe the IT issue", response)
+        self.assertEqual(self.db.query(Ticket).count(), 1)
+        self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
+
+    def test_unlinked_number_automatically_creates_guest_ticket(self):
         response = process_incoming_message(
             self.db,
             "wamid.unlinked",
@@ -117,8 +130,13 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             "My account is locked.",
         )
 
-        self.assertIn("not linked", response)
-        self.assertEqual(self.db.query(Ticket).count(), 0)
+        self.assertIn("category", response.casefold())
+        self.assertEqual(
+            self.db.query(WhatsAppContact)
+            .filter_by(phone_number="+15550000000")
+            .count(),
+            1,
+        )
 
     def test_webhook_signature_matches_twilio_request_validator(self):
         url = "https://example.test/webhooks/whatsapp"

@@ -39,7 +39,23 @@ CATEGORIES = (
     "Other",
 )
 LEVELS = ("Low", "Medium", "High")
-GREETING_MESSAGES = {"hi", "hello", "hey", "start", "ticket", "new ticket", "help"}
+GREETING_MESSAGES = {
+    "hi",
+    "hello",
+    "hey",
+    "start",
+    "ticket",
+    "new ticket",
+    "help",
+    "ok",
+    "okay",
+    "alright",
+    "got it",
+    "thanks",
+    "thank you",
+    "thank you!",
+    "cool",
+}
 MAX_DESCRIPTION_LENGTH = 4000
 
 
@@ -118,13 +134,32 @@ def process_incoming_message(
 
     if message_type != "text":
         response_text = "Please send your IT support request as a text message."
-    elif contact is None:
-        response_text = (
-            "This WhatsApp number is not linked to a TriageDesk Reporter account. "
-            "Please ask your TriageDesk administrator to link it."
-        )
     else:
-        user = db.get(User, contact.user_id)
+        if contact is None:
+            guest_email = f"guest_{phone_number.lstrip('+')}@triagedesk.guest"
+            user = db.query(User).filter(User.email == guest_email).first()
+            if user is None:
+                user = User(
+                    full_name=f"WhatsApp Guest ({phone_number})",
+                    email=guest_email,
+                    password_hash="guest_no_password",
+                    role="Reporter",
+                    approval_status="Approved",
+                    is_active=True,
+                )
+                db.add(user)
+                db.flush()
+
+            contact = WhatsAppContact(
+                phone_number=phone_number,
+                user_id=user.id,
+                linked_by_user_id=user.id,
+            )
+            db.add(contact)
+            db.flush()
+        else:
+            user = db.get(User, contact.user_id)
+
         if (
             user is None
             or not user.is_active
