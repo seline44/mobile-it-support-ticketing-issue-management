@@ -4,6 +4,7 @@ import os
 from sqlalchemy.orm import Session
 from twilio.rest import Client
 
+from meta_whatsapp import send_meta_whatsapp_message
 from models import Ticket, WhatsAppContact
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,30 @@ def send_reporter_whatsapp_update(
     )
     if contact is None:
         return False
+
+    meta_access_token = os.getenv("META_ACCESS_TOKEN")
+    meta_phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
+    if meta_access_token or meta_phone_number_id:
+        if not meta_access_token or not meta_phone_number_id:
+            logger.warning(
+                "WhatsApp update for %s was not sent: outbound Meta "
+                "credentials are incomplete.",
+                ticket.ticket_number,
+            )
+            return False
+        try:
+            send_meta_whatsapp_message(
+                meta_phone_number_id,
+                contact.phone_number.lstrip("+"),
+                message,
+            )
+        except RuntimeError:
+            logger.exception(
+                "Could not send WhatsApp update for ticket %s.",
+                ticket.ticket_number,
+            )
+            return False
+        return True
 
     account_sid = os.getenv("TWILIO_ACCOUNT_SID")
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")

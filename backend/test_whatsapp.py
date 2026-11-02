@@ -1,4 +1,7 @@
 import asyncio
+import hashlib
+import hmac
+import json
 import os
 import unittest
 from urllib.parse import urlencode
@@ -20,8 +23,11 @@ from models import (
 )
 from whatsapp import (
     process_incoming_message,
+    receive_meta_webhook,
     receive_webhook,
+    verify_meta_webhook,
     verify_webhook_signature,
+    verify_meta_webhook_signature,
     whatsapp_twiml_response,
 )
 from whatsapp_notifications import send_reporter_whatsapp_update
@@ -151,6 +157,45 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             to="whatsapp:+15551234567",
         )
 
+    def test_sends_whatsapp_update_through_meta_when_configured(self):
+        ticket = Ticket(
+            ticket_number="TD-META-UPDATE",
+            title="Wi-Fi is unavailable",
+            description="Cannot connect to Wi-Fi.",
+            category="Network",
+            impact="High",
+            urgency="High",
+            priority="Critical",
+            status="In Progress",
+            reporter_id=self.reporter.id,
+            assigned_technician_id=2,
+        )
+        self.db.add(ticket)
+        self.db.commit()
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "META_ACCESS_TOKEN": "test-meta-token",
+                    "META_PHONE_NUMBER_ID": "123456",
+                },
+            ),
+            patch("whatsapp_notifications.send_meta_whatsapp_message") as send_message,
+        ):
+            sent = send_reporter_whatsapp_update(
+                self.db,
+                ticket,
+                "The technician resolved TD-META-UPDATE.",
+            )
+
+        self.assertTrue(sent)
+        send_message.assert_called_once_with(
+            "123456",
+            "15551234567",
+            "The technician resolved TD-META-UPDATE.",
+        )
+
     def test_acknowledgement_after_ticket_does_not_start_another_conversation(self):
         self.send("wamid.1", "My WiFi is not working.")
         self.send("wamid.2", "Network")
@@ -191,6 +236,107 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             self.assertFalse(
                 verify_webhook_signature(url, params, "invalid-signature")
             )
+
+    def test_meta_webhook_signature_is_validated(self):
+        body = b'{"object":"whatsapp_business_account"}'
+        app_secret = "test-meta-app-secret"
+        signature = "sha256=" + hmac.new(
+            app_secret.encode("utf-8"), body, hashlib.sha256
+        ).hexdigest()
+
+        with patch.dict(os.environ, {"META_APP_SECRET": app_secret}):
+            self.assertTrue(verify_meta_webhook_signature(body, signature))
+            self.assertFalse(verify_meta_webhook_signature(body, "sha256=invalid"))
+
+    def test_meta_webhook_verification_returns_challenge(self):
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "scheme": "https",
+            "server": ("example.test", 443),
+            "path": "/webhooks/whatsapp",
+            "query_string": (
+                b"hub.mode=subscribe&hub.verify_token=meta-secret&hub.challenge=12345"
+            ),
+            "headers": [(b"host", b"example.test")],
+        }
+        request = Request(scope)
+
+        with patch.dict(os.environ, {"META_VERIFY_TOKEN": "meta-secret"}):
+            response = verify_meta_webhook(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.body, b"12345")
+
+    def test_meta_webhook_processes_and_replies_to_text_message(self):
+        app_secret = "test-meta-app-secret"
+        payload = {
+            "object": "whatsapp_business_account",
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "metadata": {"phone_number_id": "123456"},
+                                "messages": [
+                                    {
+                                        "from": "15551234567",
+                                        "id": "wamid.meta1",
+                                        "type": "text",
+                                        "text": {"body": "Printer is not working."},
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ],
+        }
+        body = json.dumps(payload).encode("utf-8")
+        signature = "sha256=" + hmac.new(
+            app_secret.encode("utf-8"), body, hashlib.sha256
+        ).hexdigest()
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "scheme": "https",
+            "server": ("example.test", 443),
+            "path": "/webhooks/whatsapp",
+            "query_string": b"",
+            "headers": [
+                (b"host", b"example.test"),
+                (b"content-type", b"application/json"),
+                (b"x-hub-signature-256", signature.encode("ascii")),
+            ],
+        }
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def run_in_threadpool(function, *args):
+            return function(*args)
+
+        request = Request(scope, receive)
+        with (
+            patch.dict(os.environ, {"META_APP_SECRET": app_secret}),
+            patch("whatsapp.run_in_threadpool", side_effect=run_in_threadpool),
+            patch("whatsapp.send_meta_whatsapp_message") as send_message,
+        ):
+            result = asyncio.run(receive_meta_webhook(request, self.db))
+
+        self.assertEqual(result, {"status": "received"})
+        self.assertEqual(
+            self.db.get(WhatsAppMessage, "wamid.meta1").phone_number,
+            "+15551234567",
+        )
+        send_message.assert_called_once_with(
+            "123456",
+            "15551234567",
+            "What category best describes the issue?\n"
+            "1. Network\n2. Hardware\n3. Software\n4. Email\n"
+            "5. Account Access\n6. Printer\n7. Other\n"
+            "Reply with the category name or number.",
+        )
 
     def test_twiml_response_contains_reply_message(self):
         response = whatsapp_twiml_response("Ticket created.")

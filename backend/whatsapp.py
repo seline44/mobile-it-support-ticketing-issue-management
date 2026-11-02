@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import json
 import logging
 import os
 import re
@@ -21,6 +24,7 @@ from models import (
     WhatsAppConversation,
     WhatsAppMessage,
 )
+from meta_whatsapp import send_meta_whatsapp_message
 from tickets import calculate_priority, record_history
 
 load_dotenv()
@@ -69,6 +73,16 @@ def verify_webhook_signature(
     return RequestValidator(auth_token).validate(url, params, signature)
 
 
+def verify_meta_webhook_signature(body: bytes, signature: str | None) -> bool:
+    app_secret = os.getenv("META_APP_SECRET")
+    if not app_secret or not signature or not signature.startswith("sha256="):
+        return False
+    expected = hmac.new(
+        app_secret.encode("utf-8"), body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature.removeprefix("sha256="), expected)
+
+
 def normalize_phone_number(phone_number: str) -> str:
     digits = re.sub(r"\D", "", phone_number)
     if not 8 <= len(digits) <= 15 or digits.startswith("0"):
@@ -80,6 +94,89 @@ def whatsapp_twiml_response(text: str) -> Response:
     twiml = MessagingResponse()
     twiml.message(text)
     return Response(content=str(twiml), media_type="application/xml")
+
+
+async def receive_meta_webhook(request: Request, db: Session):
+    raw_body = await request.body()
+    if not verify_meta_webhook_signature(
+        raw_body, request.headers.get("X-Hub-Signature-256")
+    ):
+        raise HTTPException(status_code=401, detail="Invalid Meta webhook signature.")
+    try:
+        payload = json.loads(raw_body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise HTTPException(
+            status_code=400, detail="Webhook body must be valid JSON."
+        ) from error
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid Meta webhook payload.")
+
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+            phone_number_id = value.get("metadata", {}).get("phone_number_id")
+            for message in value.get("messages", []):
+                message_id = message.get("id")
+                sender_number = message.get("from")
+                if not message_id or not sender_number or not phone_number_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Meta message is missing required identifiers.",
+                    )
+
+                message_type = message.get("type", "")
+                body = (
+                    message.get("text", {}).get("body", "")
+                    if message_type == "text"
+                    else ""
+                )
+                try:
+                    response_text = await run_in_threadpool(
+                        process_incoming_message,
+                        db,
+                        message_id,
+                        sender_number,
+                        message_type,
+                        body,
+                    )
+                    await run_in_threadpool(
+                        send_meta_whatsapp_message,
+                        phone_number_id,
+                        sender_number,
+                        response_text,
+                    )
+                except IntegrityError:
+                    db.rollback()
+                    duplicate = db.get(WhatsAppMessage, message_id)
+                    if duplicate is None:
+                        raise
+                    try:
+                        await run_in_threadpool(
+                            send_meta_whatsapp_message,
+                            phone_number_id,
+                            sender_number,
+                            duplicate.response_text,
+                        )
+                    except RuntimeError as error:
+                        logger.exception(
+                            "Meta WhatsApp message reply delivery failed."
+                        )
+                        raise HTTPException(
+                            status_code=502,
+                            detail="Meta WhatsApp message reply failed.",
+                        ) from error
+                except RuntimeError as error:
+                    logger.exception("Meta WhatsApp message processing failed.")
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Meta WhatsApp message processing failed.",
+                    ) from error
+                except ValueError as error:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="WhatsApp sender number is invalid.",
+                    ) from error
+    return {"status": "received"}
 
 
 def _create_ticket(
@@ -300,11 +397,33 @@ def process_incoming_message(
     return response_text
 
 
+@router.get("")
+def verify_meta_webhook(request: Request):
+    verify_token = os.getenv("META_VERIFY_TOKEN")
+    if not verify_token:
+        raise HTTPException(
+            status_code=503, detail="META_VERIFY_TOKEN is not configured."
+        )
+    query = request.query_params
+    if (
+        query.get("hub.mode") != "subscribe"
+        or not hmac.compare_digest(query.get("hub.verify_token", ""), verify_token)
+        or "hub.challenge" not in query
+    ):
+        raise HTTPException(status_code=403, detail="Meta webhook verification failed.")
+    return Response(content=query["hub.challenge"], media_type="text/plain")
+
+
 @router.post("")
 async def receive_webhook(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() == (
+        "application/json"
+    ):
+        return await receive_meta_webhook(request, db)
+
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
     if not auth_token:
         raise HTTPException(

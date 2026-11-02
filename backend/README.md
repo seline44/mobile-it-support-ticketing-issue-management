@@ -53,9 +53,14 @@ Add these environment variables to the web service in the Render dashboard:
 | `PYTHON_VERSION` | `3.13.14` (the Python version used to validate this backend) |
 | `DATABASE_URL` | Internal connection string from the migrated Render PostgreSQL database |
 | `JWT_SECRET_KEY` | A new, randomly generated secret |
-| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
-| `TWILIO_ACCOUNT_SID` | Twilio Account SID (needed for outbound WhatsApp updates) |
-| `TWILIO_WHATSAPP_FROM` | Approved Twilio WhatsApp sender, e.g. `whatsapp:+15551234567` |
+| `META_VERIFY_TOKEN` | A secret phrase you choose and also enter in Meta's webhook setup |
+| `META_APP_SECRET` | App Secret from Meta App settings, used to validate webhook requests |
+| `META_ACCESS_TOKEN` | Meta access token with WhatsApp messaging permissions |
+| `META_PHONE_NUMBER_ID` | Phone Number ID for the WhatsApp Business sender |
+| `META_GRAPH_API_VERSION` | Optional Graph API version, defaults to `v23.0` |
+| `TWILIO_AUTH_TOKEN` | Optional; required only when using the Twilio webhook |
+| `TWILIO_ACCOUNT_SID` | Optional; used for Twilio outbound WhatsApp updates |
+| `TWILIO_WHATSAPP_FROM` | Optional; Twilio sender, e.g. `whatsapp:+15551234567` |
 
 Enter secret values directly in Render's environment settings. Do not put them
 in `render.yaml`, source code, or Git. The startup command creates any missing tables and applies the existing
@@ -63,15 +68,32 @@ resolution-column migration before starting FastAPI. Use a service plan that
 remains available for production webhooks; free services can sleep and delay
 webhook responses.
 
-After deployment, verify the service's `/` endpoint responds. Configure the
-Twilio WhatsApp sender's incoming-message webhook to
-`https://<your-render-service>.onrender.com/webhooks/whatsapp` using `POST`.
+After deployment, verify the service's `/` endpoint responds. The WhatsApp
+webhook URL is
+`https://<your-render-service>.onrender.com/webhooks/whatsapp`.
 Configure SMTP variables separately if password-reset email delivery is
 needed.
 
+## Meta WhatsApp Cloud API setup
+
+Use the webhook URL above as the callback URL in your Meta app's WhatsApp
+configuration. Choose a secret phrase for the **Verify token** and set the
+same value as `META_VERIFY_TOKEN` in the backend environment. Meta performs
+the GET verification request automatically; incoming events use POST. Subscribe
+the WhatsApp Business Account webhook to the `messages` field.
+
+Set `META_APP_SECRET`, `META_ACCESS_TOKEN`, and `META_PHONE_NUMBER_ID` in the
+backend environment. Find the App Secret in the Meta app's **Settings > Basic**,
+and the Phone Number ID and access token in the app's WhatsApp API setup. Keep
+all credentials private and configure them in Render's environment settings,
+not in source control. Incoming webhook signatures are validated using the App
+Secret. The same access token and Phone Number ID are used to send replies and
+ticket updates. The API version defaults to `v23.0`; set
+`META_GRAPH_API_VERSION` if your app uses another supported version.
+
 ## Twilio WhatsApp setup
 
-The WhatsApp webhook is available at `/webhooks/whatsapp`. Configure the
+The same webhook URL continues to accept Twilio requests. Configure the
 following in the backend `.env` file; never commit the Twilio credentials:
 
 ```dotenv
@@ -125,7 +147,7 @@ Reporters can send a text message describing their issue. TriageDesk then
 collects category, impact, and urgency in the WhatsApp conversation, creates
 the ticket in the existing database, and replies with its ticket number and
 priority. Send `CANCEL` to stop an in-progress ticket conversation. Duplicate
-Twilio webhook deliveries are handled idempotently.
+webhook deliveries from either provider are handled idempotently.
 
 The Administrator dashboard checks the WhatsApp ticket notification feed
 every 30 seconds and displays newly created WhatsApp tickets in its in-app
