@@ -126,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   Icons.arrow_back_rounded,
                                   color: Colors.white,
                                 ),
-                                onPressed: () => Navigator.maybePop(context),
+                                onPressed: () => Navigator.of(context).pop(),
                               ),
                               const SizedBox(width: 8),
                               const TriageDeskLogo(size: 36),
