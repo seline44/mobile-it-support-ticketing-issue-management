@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/ticket.dart';
 import '../services/api_service.dart';
-import '../services/ticket_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/triagedesk_logo.dart';
 
@@ -212,13 +210,6 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
       );
 
       if (!mounted) return;
-
-      try {
-        final newTicket = Ticket.fromJson(
-          Map<String, dynamic>.from(createdTicket),
-        );
-        TicketService.addTicket(newTicket);
-      } catch (_) {}
 
       final ticketNumber =
           createdTicket['ticket_number']?.toString() ??
@@ -752,7 +743,10 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.image_rounded, color: theme.colorScheme.primary),
+                        Icon(
+                          Icons.image_rounded,
+                          color: theme.colorScheme.primary,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -762,8 +756,12 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close_rounded, color: Colors.red),
-                          onPressed: () => setState(() => _attachedImageName = null),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.red,
+                          ),
+                          onPressed: () =>
+                              setState(() => _attachedImageName = null),
                           tooltip: 'Remove attachment',
                         ),
                       ],

@@ -1,19 +1,44 @@
-
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
 class ApiService {
   static const String baseUrl = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'http://127.0.0.1:8000',
-);
-
+    'API_BASE_URL',
+    defaultValue: 'http://127.0.0.1:8000',
+  );
 
   static String? _accessToken;
   static Map<String, dynamic>? _currentUser;
 
   static Map<String, dynamic>? get currentUser => _currentUser;
   static String? get accessToken => _accessToken;
+  static String get currentUserName {
+    final fullName = _currentUser?['full_name']?.toString().trim();
+    if (fullName != null && fullName.isNotEmpty) return fullName;
+
+    final email = currentUserEmail;
+    if (email.contains('@')) return email.split('@').first;
+
+    return _currentUser?['role']?.toString() ?? 'User';
+  }
+
+  static String get currentUserEmail =>
+      _currentUser?['email']?.toString().trim() ?? '';
+
+  static String get currentUserInitials {
+    final fullName = _currentUser?['full_name']?.toString().trim();
+    if (fullName != null && fullName.isNotEmpty) {
+      return fullName
+          .split(RegExp(r'\s+'))
+          .take(2)
+          .map((part) => part[0].toUpperCase())
+          .join();
+    }
+
+    final email = currentUserEmail;
+    return email.isNotEmpty ? email[0].toUpperCase() : 'TD';
+  }
 
   static void logout() {
     _accessToken = null;
@@ -21,10 +46,9 @@ class ApiService {
   }
 
   static Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        if (_accessToken != null)
-          'Authorization': 'Bearer $_accessToken',
-      };
+    'Content-Type': 'application/json',
+    if (_accessToken != null) 'Authorization': 'Bearer $_accessToken',
+  };
 
   static dynamic _decode(http.Response response) {
     if (response.body.isEmpty) return <String, dynamic>{};
@@ -49,10 +73,7 @@ class ApiService {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'email': email.trim(),
-        'password': password,
-      }),
+      body: jsonEncode({'email': email.trim(), 'password': password}),
     );
 
     final decoded = _decode(response);
@@ -106,6 +127,16 @@ class ApiService {
       return decoded;
     }
     throw Exception(_error(decoded, 'Could not load tickets'));
+  }
+
+  static Future<List<dynamic>> getTicketHistory(int ticketId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/tickets/$ticketId/history'),
+      headers: _headers,
+    );
+    final decoded = _decode(response);
+    if (response.statusCode == 200 && decoded is List) return decoded;
+    throw Exception(_error(decoded, 'Could not load ticket activity'));
   }
 
   static Future<Map<String, dynamic>> createTicket({
@@ -260,9 +291,7 @@ class ApiService {
     throw Exception(_error(decoded, 'Could not link WhatsApp number'));
   }
 
-  static Future<String> forgotPassword({
-    required String email,
-  }) async {
+  static Future<String> forgotPassword({required String email}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/forgot-password'),
       headers: {'Content-Type': 'application/json'},

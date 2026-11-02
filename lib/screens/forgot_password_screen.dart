@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
-import '../widgets/auth_page_frame.dart';
+import '../theme/app_theme.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -37,10 +37,24 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
+          icon: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: Theme.of(dialogContext).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              Icons.mark_email_read_outlined,
+              color: Theme.of(dialogContext).colorScheme.primary,
+              size: 32,
+            ),
+          ),
           title: const Text('Check your email'),
-          content: Text(message),
+          content: Text(message, textAlign: TextAlign.center),
+          actionsAlignment: MainAxisAlignment.center,
           actions: [
-            TextButton(
+            FilledButton(
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('OK'),
             ),
@@ -57,19 +71,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (message.contains('Connection refused') ||
           message.contains('Failed host lookup') ||
           message.contains('ClientException')) {
-        message = 'Unable to connect to server. Please ensure the backend server is running.';
+        message =
+            'Unable to connect to server. Please ensure the backend server is running.';
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.red.shade700,
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) {
@@ -82,105 +89,193 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final textPrimary = colors.onSurface;
-    final textSecondary = colors.onSurfaceVariant;
 
-    return AuthPageFrame(
-      topLeading: IconButton(
-        onPressed: () => Navigator.maybePop(context),
-        tooltip: 'Back to sign in',
-        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-        padding: EdgeInsets.zero,
-        style: IconButton.styleFrom(
-          foregroundColor: colors.onSurfaceVariant,
-          backgroundColor: colors.surface,
-          side: BorderSide(color: colors.outlineVariant),
-          shape: const CircleBorder(),
-        ),
-        icon: const Icon(Icons.arrow_back_rounded, size: 20),
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const AuthBrandHeader(
-              title: 'Forgot your password?',
-              subtitle: 'Enter your email to receive a password reset link.',
-              centeredBrand: true,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Enter the email address associated with your '
-              'TriageDesk account. If the account is eligible, '
-              'we will send you a link to reset your password.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, height: 1.5, color: textSecondary),
-            ),
-            const SizedBox(height: 22),
-            TextFormField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.done,
-              style: TextStyle(color: textPrimary),
-              onFieldSubmitted: (_) {
-                if (!_isLoading) _sendResetLink();
-              },
-              decoration: authInputDecoration(
-                context,
-                hint: 'Email address',
-                icon: Icons.email_outlined,
-              ),
-              validator: (value) {
-                final email = value?.trim() ?? '';
-
-                if (email.isEmpty) {
-                  return 'Please enter your email address.';
-                }
-
-                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-                  return 'Please enter a valid email address.';
-                }
-
-                return null;
-              },
-            ),
-            const SizedBox(height: 18),
-            SizedBox(
-              height: 48,
-              child: FilledButton(
-                onPressed: _isLoading ? null : _sendResetLink,
-                style: FilledButton.styleFrom(
-                  backgroundColor: colors.primary,
-                  foregroundColor: colors.onPrimary,
-                  shape: const StadiumBorder(),
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: IconButton(
+                    tooltip: 'Back to sign in',
+                    icon: Icon(Icons.arrow_back_rounded,
+                        color: colors.onSurface),
+                    onPressed: () => Navigator.maybePop(context),
+                  ),
                 ),
-                child: _isLoading
-                    ? SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colors.onPrimary,
+                const SizedBox(height: 32),
+
+                // Key icon with a small "mail" badge
+                Center(
+                  child: SizedBox(
+                    width: 104,
+                    height: 104,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 96,
+                          height: 96,
+                          decoration: BoxDecoration(
+                            color: colors.primaryContainer,
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Icon(Icons.vpn_key_outlined,
+                              size: 42, color: colors.primary),
                         ),
-                      )
-                    : const Text(
-                        'Send Reset Link',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: colors.surface,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: theme.dividerColor),
+                            ),
+                            child: Icon(Icons.mark_email_read_outlined,
+                                size: 17, color: colors.secondary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 26),
+                const Text(
+                  'Locked out? It happens.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'Enter the email you registered with and we\'ll send a '
+                    'link to choose a new password.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                const Text(
+                  'Email address',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.done,
+                  onFieldSubmitted: (_) {
+                    if (!_isLoading) _sendResetLink();
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'you@school.ac.ke',
+                    prefixIcon: Icon(Icons.mail_outline_rounded),
+                  ),
+                  validator: (value) {
+                    final email = value?.trim() ?? '';
+
+                    if (email.isEmpty) {
+                      return 'Please enter your email address.';
+                    }
+
+                    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                        .hasMatch(email)) {
+                      return 'Please enter a valid email address.';
+                    }
+
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 20),
+
+                SizedBox(
+                  height: 54,
+                  child: FilledButton(
+                    onPressed: _isLoading ? null : _sendResetLink,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.deepTeal,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Send reset link',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                TextButton.icon(
+                  onPressed: _isLoading ? null : () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                  label: const Text(
+                    'Back to sign in',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: theme.dividerColor),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.shield_outlined,
+                          size: 20, color: colors.onSurfaceVariant),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'For your security, we show the same message '
+                          'whether or not the email has an account.',
+                          style: TextStyle(
+                            color: colors.onSurfaceVariant,
+                            fontSize: 12.5,
+                            height: 1.5,
+                          ),
                         ),
                       ),
-              ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 18),
-            TextButton.icon(
-              onPressed: _isLoading ? null : () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back_rounded),
-              label: const Text('Back to Sign In'),
-              style: TextButton.styleFrom(foregroundColor: colors.primary),
-            ),
-          ],
+          ),
         ),
       ),
     );

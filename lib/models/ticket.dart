@@ -13,9 +13,12 @@ class Ticket {
   final DateTime createdAt;
 
   String? assignedTechnician;
+  int? assignedTechnicianId;
   String? technicianNotes;
   String? resolution;
+  String? lastModifiedBy;
   DateTime? updatedAt;
+  DateTime? lastModifiedAt;
   DateTime? resolvedAt;
 
   Ticket({
@@ -31,9 +34,12 @@ class Ticket {
     required this.status,
     required this.createdAt,
     this.assignedTechnician,
+    this.assignedTechnicianId,
     this.technicianNotes,
     this.resolution,
+    this.lastModifiedBy,
     this.updatedAt,
+    this.lastModifiedAt,
     this.resolvedAt,
     this.ticketNumber,
   });
@@ -58,11 +64,19 @@ class Ticket {
       updatedAt: json['updated_at'] == null
           ? null
           : DateTime.parse(json['updated_at'].toString()),
+      lastModifiedBy: json['last_modified_by_name']?.toString(),
+      lastModifiedAt: json['last_modified_at'] == null
+          ? null
+          : DateTime.parse(json['last_modified_at'].toString()),
       resolvedAt: json['resolved_at'] == null
           ? null
           : DateTime.parse(json['resolved_at'].toString()),
-      assignedTechnician: assignedName?.toString() ??
+      assignedTechnician:
+          assignedName?.toString() ??
           (assignedId == null ? null : 'Technician #$assignedId'),
+      assignedTechnicianId: assignedId is int
+          ? assignedId
+          : int.tryParse(assignedId?.toString() ?? ''),
       resolution: json['resolution']?.toString(),
     );
   }

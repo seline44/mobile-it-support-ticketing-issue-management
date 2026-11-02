@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import '../models/ticket.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/celebration_dialog.dart';
 import '../widgets/triagedesk_logo.dart';
+import '../widgets/user_header.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
+import 'ticket_details_screen.dart';
 
 class TechnicianDashboard extends StatefulWidget {
   const TechnicianDashboard({super.key});
@@ -16,10 +17,11 @@ class TechnicianDashboard extends StatefulWidget {
 }
 
 class _TechnicianDashboardState extends State<TechnicianDashboard> {
-  static const Color navy = AppTheme.charcoal;
+  int _currentIndex = 0;
   static const Color blue = AppTheme.accentTeal;
   static const Color success = AppTheme.accentTeal;
   static const Color warning = AppTheme.warningGold;
+  static const Color danger = Color(0xFFDC2626);
 
   List<Ticket> _tickets = [];
   bool _loading = true;
@@ -60,40 +62,44 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     }
   }
 
-  int get _openCount => _tickets.where((t) => t.status == 'Open').length;
-
-  int get _progressCount =>
-      _tickets.where((t) => t.status == 'In Progress').length;
-
-  int get _resolvedCount =>
-      _tickets.where((t) => t.status == 'Resolved').length;
-
-  int get _urgentCount => _tickets
-      .where((t) => t.priority == 'High' || t.priority == 'Critical')
-      .length;
-
-  void _showMessage(String message, {bool isError = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red.shade700 : navy,
-      ),
-    );
+  String get _technicianName => ApiService.currentUserName;
+  String get _technicianEmail => ApiService.currentUserEmail;
+  int? get _technicianId {
+    final id = ApiService.currentUser?['id'];
+    return id is int ? id : int.tryParse(id?.toString() ?? '');
   }
 
+  int get _assignedCount => _tickets
+      .where((ticket) => ticket.assignedTechnicianId == _technicianId)
+      .length;
+  int get _progressCount =>
+      _tickets.where((t) => t.status == 'In Progress').length;
+  int get _pendingCount => _tickets
+      .where(
+        (ticket) =>
+            (ticket.status == 'Open' || ticket.status == 'Pending') &&
+            ticket.assignedTechnicianId == null,
+      )
+      .length;
+
   Future<void> _openTicket(Ticket ticket) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ManageTicketSheet(
-        ticket: ticket,
-        onUpdated: _refreshTickets,
-        onMessage: _showMessage,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TicketDetailsScreen(
+          id: ticket.id,
+          title: ticket.title,
+          description: ticket.description,
+          category: ticket.category,
+          impact: ticket.impact,
+          urgency: ticket.urgency,
+          device: ticket.device,
+          location: ticket.location,
+          status: ticket.status,
+          lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
+        ),
       ),
     );
-    await _refreshTickets();
   }
 
   Future<void> _confirmSignOut() async {
@@ -141,235 +147,422 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final background = Theme.of(context).scaffoldBackgroundColor;
-    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
+    final theme = Theme.of(context);
+    final background = theme.scaffoldBackgroundColor;
+    final secondaryColor = theme.colorScheme.onSurfaceVariant;
 
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
-        backgroundColor: navy,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TriageDeskLogo(size: 32),
-            SizedBox(width: 10),
+            TriageDeskLogo(size: 30),
+            SizedBox(width: 8),
             Text(
               'TriageDesk',
-              style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.3),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.3,
+                fontSize: 18,
+              ),
             ),
           ],
         ),
         actions: [
-          IconButton(
-            onPressed: _refreshTickets,
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh tickets',
+          Stack(
+            alignment: Alignment.topRight,
+            children: [
+              IconButton(
+                onPressed: _refreshTickets,
+                icon: const Icon(Icons.notifications_outlined),
+                tooltip: 'Notifications',
+              ),
+              Positioned(
+                right: 10,
+                top: 10,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
           ),
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            },
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings & Appearance',
-          ),
-          IconButton(
-            onPressed: _confirmSignOut,
-            icon: const Icon(Icons.logout_rounded),
-            tooltip: 'Sign out',
+          const SizedBox(width: 4),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: CircleAvatar(
+              radius: 17,
+              backgroundColor: blue,
+              child: Text(
+                ApiService.currentUserInitials,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           ),
         ],
       ),
-      body: RefreshIndicator(
-        color: navy,
-        onRefresh: _refreshTickets,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
-          children: [
-            const Text(
-              'Hello, Technician',
-              style: TextStyle(fontSize: 27, fontWeight: FontWeight.bold),
+      body: switch (_currentIndex) {
+        0 => _buildHomeTab(theme, secondaryColor),
+        1 => _buildAssignedTab(theme, secondaryColor),
+        2 => _buildAllTicketsTab(theme, secondaryColor),
+        3 => _buildProfileTab(theme),
+        _ => _buildHomeTab(theme, secondaryColor),
+      },
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: blue,
+        unselectedItemColor: secondaryColor,
+        onTap: (index) => setState(() => _currentIndex = index),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_rounded),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.assignment_ind_outlined),
+            label: 'Assigned',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.confirmation_number_outlined),
+            label: 'Tickets',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline_rounded),
+            label: 'Profile',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeTab(ThemeData theme, Color secondaryColor) {
+    return RefreshIndicator(
+      color: blue,
+      onRefresh: _refreshTickets,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
+        children: [
+          buildUserHeader(context, roleTitle: 'Technician', color: blue),
+          // Greeting
+          Text(
+            'Good morning, $_technicianName',
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(height: 6),
-            Text(
-              'View, manage and resolve support tickets.',
-              style: TextStyle(fontSize: 14, color: secondaryColor),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: _summaryCard(
-                    'Open',
-                    _openCount,
-                    Icons.pending_actions_outlined,
-                    warning,
-                    isDark,
-                    secondaryColor,
-                  ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Here are your assigned tickets.',
+            style: TextStyle(fontSize: 13, color: secondaryColor),
+          ),
+          const SizedBox(height: 18),
+
+          // 3 Summary Cards (Assigned, In Progress, Pending)
+          Row(
+            children: [
+              Expanded(
+                child: _summaryCard(
+                  'Assigned',
+                  _assignedCount,
+                  Icons.person_outline_rounded,
+                  blue,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _summaryCard(
-                    'Urgent',
-                    _urgentCount,
-                    Icons.priority_high_rounded,
-                    warning,
-                    isDark,
-                    secondaryColor,
-                  ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryCard(
+                  'In Progress',
+                  _progressCount,
+                  Icons.access_time_rounded,
+                  blue,
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _summaryCard(
-                    'In Progress',
-                    _progressCount,
-                    Icons.sync_outlined,
-                    blue,
-                    isDark,
-                    secondaryColor,
-                  ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryCard(
+                  'Pending',
+                  _pendingCount,
+                  Icons.hourglass_empty_rounded,
+                  warning,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _summaryCard(
-                    'Resolved',
-                    _resolvedCount,
-                    Icons.check_circle_outline,
-                    success,
-                    isDark,
-                    secondaryColor,
-                  ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Assigned Tickets Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Assigned Tickets',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
-            const SizedBox(height: 30),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Support Tickets',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '${_tickets.length} tickets',
-                  style: const TextStyle(
+              ),
+              TextButton(
+                onPressed: _refreshTickets,
+                child: const Text(
+                  'View all',
+                  style: TextStyle(
                     color: blue,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_loading && _tickets.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(35),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_error != null && _tickets.isEmpty)
-              _messageState(
-                icon: Icons.cloud_off_outlined,
-                title: 'Could not load tickets',
-                message: _error!,
-                isDark: isDark,
-                secondaryColor: secondaryColor,
-                action: TextButton.icon(
-                  onPressed: _refreshTickets,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Try again'),
-                ),
-              )
-            else if (_tickets.isEmpty)
-              _messageState(
-                icon: Icons.inbox_outlined,
-                title: 'No support tickets',
-                message: 'New tickets submitted by reporters will appear here.',
-                isDark: isDark,
-                secondaryColor: secondaryColor,
-              )
-            else ...[
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(
-                    'Refresh warning: $_error',
-                    style: const TextStyle(color: Colors.red),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Ticket List
+          if (_loading && _tickets.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(35),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error != null && _tickets.isEmpty)
+            _messageState(
+              icon: Icons.cloud_off_outlined,
+              title: 'Could not load tickets',
+              message: _error!,
+            )
+          else if (_tickets.isEmpty)
+            _messageState(
+              icon: Icons.inbox_outlined,
+              title: 'No assigned tickets',
+              message: 'Assigned support tickets will appear here.',
+            )
+          else
+            ..._tickets.map((t) => _ticketCard(t, secondaryColor)),
+
+          const SizedBox(height: 24),
+
+          // Recent Activity Section
+          const Text(
+            'Recent Activity',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          if (_tickets.isEmpty)
+            Text(
+              'No recent ticket activity.',
+              style: TextStyle(color: secondaryColor),
+            )
+          else
+            ...(_tickets.toList()..sort(
+                  (a, b) =>
+                      (b.lastModifiedAt ?? b.updatedAt ?? b.createdAt)
+                          .compareTo(
+                            a.lastModifiedAt ??
+                                a.updatedAt ??
+                                a.createdAt,
+                          ),
+                ))
+                .take(3)
+                .map(
+                  (ticket) => _activityItem(
+                    initials: ApiService.currentUserInitials,
+                    action: ticket.lastModifiedBy == null
+                        ? 'Ticket ${ticket.ticketNumber ?? ticket.id} · ${ticket.status}'
+                        : '${ticket.lastModifiedBy} updated ${ticket.ticketNumber ?? ticket.id}',
+                    description: ticket.title,
+                    time: _timeAgo(
+                      ticket.lastModifiedAt ??
+                          ticket.updatedAt ??
+                          ticket.createdAt,
+                    ),
+                    color: blue,
                   ),
                 ),
-              ..._tickets.map((t) => _ticketCard(t, isDark, secondaryColor)),
-            ],
-          ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _summaryCard(
-    String title,
-    int value,
-    IconData icon,
-    Color iconColor,
-    bool isDark,
-    Color secondaryColor,
-  ) {
-    final cardColor = Theme.of(context).cardColor;
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+  Widget _buildAssignedTab(ThemeData theme, Color secondaryColor) {
+    final assignedTickets = _tickets
+        .where((ticket) => ticket.assignedTechnicianId == _technicianId)
+        .toList();
+
+    return RefreshIndicator(
+      color: blue,
+      onRefresh: _refreshTickets,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
+        children: [
+          buildUserHeader(context, roleTitle: 'Technician', color: blue),
+          const Text(
+            'Assigned Tickets',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${assignedTickets.length} assigned tickets',
+            style: TextStyle(fontSize: 13, color: secondaryColor),
+          ),
+          const SizedBox(height: 16),
+          if (_loading && _tickets.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(35),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error != null && _tickets.isEmpty)
+            _messageState(
+              icon: Icons.cloud_off_outlined,
+              title: 'Could not load tickets',
+              message: _error!,
+            )
+          else if (assignedTickets.isEmpty)
+            _messageState(
+              icon: Icons.inbox_outlined,
+              title: 'No assigned tickets',
+              message: 'Tickets assigned to you will appear here.',
+            )
+          else
+            ...assignedTickets.map((t) => _ticketCard(t, secondaryColor)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAllTicketsTab(ThemeData theme, Color secondaryColor) {
+    return RefreshIndicator(
+      color: blue,
+      onRefresh: _refreshTickets,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
+        children: [
+          buildUserHeader(context, roleTitle: 'Technician', color: blue),
+          const Text(
+            'All Support Tickets',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${_tickets.length} total tickets',
+            style: TextStyle(fontSize: 13, color: secondaryColor),
+          ),
+          const SizedBox(height: 16),
+          if (_loading && _tickets.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(35),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error != null && _tickets.isEmpty)
+            _messageState(
+              icon: Icons.cloud_off_outlined,
+              title: 'Could not load tickets',
+              message: _error!,
+            )
+          else if (_tickets.isEmpty)
+            _messageState(
+              icon: Icons.inbox_outlined,
+              title: 'No tickets available',
+              message: 'Support tickets will appear here.',
+            )
+          else
+            ..._tickets.map((t) => _ticketCard(t, secondaryColor)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileTab(ThemeData theme) {
+    final secondaryColor = theme.colorScheme.onSurfaceVariant;
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        buildUserHeader(context, roleTitle: 'Technician', color: blue),
+        const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: blue.withValues(alpha: 0.15),
+              foregroundColor: blue,
+              child: Text(ApiService.currentUserInitials),
+            ),
+            title: Text(
+              _technicianName,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              _technicianEmail.isEmpty
+                  ? 'Technician'
+                  : '$_technicianEmail\nTechnician',
+              style: TextStyle(color: secondaryColor),
+            ),
+            isThreeLine: _technicianEmail.isNotEmpty,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('Settings'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+        ),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.logout_rounded, color: Colors.red),
+            title: const Text('Sign out'),
+            onTap: _confirmSignOut,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryCard(String title, int value, IconData icon, Color iconColor) {
+    final theme = Theme.of(context);
+    final cardColor = theme.cardColor;
+    final borderColor = theme.colorScheme.outlineVariant;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: iconColor, size: 20),
-              ),
-              Text(
-                '$value',
-                style: const TextStyle(
-                  fontSize: 25,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
+          Icon(icon, color: iconColor, size: 22),
           const SizedBox(height: 12),
+          Text(
+            '$value',
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 2),
           Text(
             title,
             style: TextStyle(
-              fontSize: 13,
-              color: secondaryColor,
+              fontSize: 12,
+              color: theme.colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -378,10 +571,11 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     );
   }
 
-  Widget _ticketCard(Ticket ticket, bool isDark, Color secondaryColor) {
+  Widget _ticketCard(Ticket ticket, Color secondaryColor) {
+    final theme = Theme.of(context);
     final statusColor = _statusColor(ticket.status);
-    final cardColor = Theme.of(context).cardColor;
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final cardColor = theme.cardColor;
+    final borderColor = theme.colorScheme.outlineVariant;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -389,103 +583,168 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
         color: cardColor,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => _openTicket(ticket),
         child: Padding(
-          padding: const EdgeInsets.all(15),
+          padding: const EdgeInsets.all(14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
-                  color: navy.withValues(alpha: 0.08),
+                  color: blue.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   _categoryIcon(ticket.category),
-                  color: navy,
+                  color: blue,
                   size: 21,
                 ),
               ),
-              const SizedBox(width: 13),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       ticket.title,
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 5),
-                    Text(
-                      ticket.category,
-                      style: TextStyle(fontSize: 12, color: secondaryColor),
-                    ),
-                    const SizedBox(height: 9),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                    const SizedBox(height: 4),
+                    Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            ticket.status,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: statusColor,
-                            ),
-                          ),
-                        ),
                         Text(
                           ticket.ticketNumber ?? 'ID ${ticket.id}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: secondaryColor,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: TextStyle(fontSize: 12, color: secondaryColor),
                         ),
+                        const SizedBox(width: 6),
+                        Text('•', style: TextStyle(color: secondaryColor)),
+                        const SizedBox(width: 6),
                         Text(
                           ticket.priority,
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 12,
                             color: _priorityColor(ticket.priority),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _timeAgo(
+                        ticket.lastModifiedAt ??
+                            ticket.updatedAt ??
+                            ticket.createdAt,
+                      ),
+                      style: TextStyle(fontSize: 11, color: secondaryColor),
+                    ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: secondaryColor),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  ticket.status,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _activityItem({
+    required String initials,
+    required String action,
+    required String description,
+    required String time,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+    final cardColor = theme.cardColor;
+    final borderColor = theme.colorScheme.outlineVariant;
+    final secondaryColor = theme.colorScheme.onSurfaceVariant;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: color.withValues(alpha: 0.2),
+            child: Text(
+              initials,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        action,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      time,
+                      style: TextStyle(fontSize: 11, color: secondaryColor),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  description,
+                  style: TextStyle(fontSize: 12, color: secondaryColor),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -494,53 +753,55 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     required IconData icon,
     required String title,
     required String message,
-    required bool isDark,
-    required Color secondaryColor,
-    Widget? action,
   }) {
-    final cardColor = Theme.of(context).cardColor;
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
-
+    final theme = Theme.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 35),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: cardColor,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Column(
         children: [
-          Icon(icon, size: 45, color: secondaryColor),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 6),
+          Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(height: 10),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: secondaryColor, height: 1.4),
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
-          if (action != null) ...[const SizedBox(height: 12), action],
         ],
       ),
     );
   }
 
+  String _timeAgo(DateTime dateTime) {
+    final elapsed = DateTime.now().difference(dateTime.toLocal());
+    if (elapsed.inDays > 0) return '${elapsed.inDays}d ago';
+    if (elapsed.inHours > 0) return '${elapsed.inHours}h ago';
+    if (elapsed.inMinutes > 0) return '${elapsed.inMinutes}m ago';
+    return 'Just now';
+  }
+
   Color _statusColor(String status) {
     switch (status) {
       case 'Open':
-        return warning;
+        return danger;
       case 'In Progress':
         return blue;
       case 'Resolved':
         return success;
-      case 'Closed':
-        return Theme.of(context).colorScheme.onSurfaceVariant;
+      case 'Pending':
+        return warning;
       default:
-        return Theme.of(context).colorScheme.onSurfaceVariant;
+        return blue;
     }
   }
 
@@ -549,11 +810,11 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
       case 'Critical':
         return const Color(0xFFDC2626);
       case 'High':
-        return warning;
+        return danger;
       case 'Medium':
-        return blue;
+        return warning;
       default:
-        return Theme.of(context).colorScheme.onSurfaceVariant;
+        return success;
     }
   }
 
@@ -569,449 +830,8 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
         return Icons.email_outlined;
       case 'account access':
         return Icons.lock_outline_rounded;
-      case 'printer':
-      case 'printing':
-        return Icons.print_outlined;
       default:
         return Icons.help_outline_rounded;
     }
-  }
-}
-
-class _ManageTicketSheet extends StatefulWidget {
-  final Ticket ticket;
-  final Future<void> Function() onUpdated;
-  final void Function(String message, {bool isError}) onMessage;
-
-  const _ManageTicketSheet({
-    required this.ticket,
-    required this.onUpdated,
-    required this.onMessage,
-  });
-
-  @override
-  State<_ManageTicketSheet> createState() => _ManageTicketSheetState();
-}
-
-class _ManageTicketSheetState extends State<_ManageTicketSheet> {
-  static const Color navy = AppTheme.charcoal;
-  static const Color blue = AppTheme.accentTeal;
-  static const Color success = AppTheme.accentTeal;
-
-  late final TextEditingController _notesController;
-  late final TextEditingController _resolutionController;
-  bool _busy = false;
-  String _status = '';
-
-  int get _ticketId {
-    final id = int.tryParse(widget.ticket.id);
-    if (id == null) {
-      throw Exception('This ticket has an invalid database ID.');
-    }
-    return id;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _status = widget.ticket.status;
-    _notesController = TextEditingController(
-      text: widget.ticket.technicianNotes ?? '',
-    );
-    _resolutionController = TextEditingController(
-      text: widget.ticket.resolution ?? '',
-    );
-  }
-
-  @override
-  void dispose() {
-    _notesController.dispose();
-    _resolutionController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _runAction(
-    Future<void> Function() action,
-    String successMessage,
-  ) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-
-    try {
-      await action();
-      if (!mounted) return;
-      await widget.onUpdated();
-      if (!mounted) return;
-      widget.onMessage(successMessage);
-    } catch (error) {
-      if (mounted) {
-        widget.onMessage(
-          error.toString().replaceFirst('Exception: ', ''),
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ticket = widget.ticket;
-    final background = Theme.of(context).scaffoldBackgroundColor;
-    final cardColor = Theme.of(context).cardColor;
-    final borderColor = Theme.of(context).colorScheme.outlineVariant;
-    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
-
-    return SafeArea(
-      child: Container(
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 12,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 18,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant
-                          .withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  'Manage Ticket',
-                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  'Review and update this support request.',
-                  style: TextStyle(color: secondaryColor, fontSize: 12),
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: cardColor,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: borderColor),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        ticket.ticketNumber ?? 'Ticket ${ticket.id}',
-                        style: TextStyle(color: secondaryColor, fontSize: 12),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        ticket.title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('${ticket.category} • ${ticket.priority}'),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Status: $_status',
-                        style: TextStyle(
-                          color: _status == 'Resolved' ? success : blue,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-                _sectionTitle('Ticket Information'),
-                const SizedBox(height: 8),
-                _info('Impact', ticket.impact, secondaryColor),
-                _info('Urgency', ticket.urgency, secondaryColor),
-                _info('Device', ticket.device, secondaryColor),
-                _info('Location', ticket.location, secondaryColor),
-                _info(
-                  'Assigned Technician',
-                  ticket.assignedTechnician ?? 'Not assigned',
-                  secondaryColor,
-                ),
-                const SizedBox(height: 18),
-                _sectionTitle('Problem Description'),
-                const SizedBox(height: 8),
-                Text(
-                  ticket.description,
-                  style: TextStyle(color: secondaryColor, height: 1.5),
-                ),
-                const SizedBox(height: 22),
-
-                if (_status == 'Open')
-                  _button(
-                    'Accept Ticket',
-                    Icons.check_circle_outline,
-                    () => _runAction(() async {
-                      await ApiService.acceptTicket(_ticketId);
-                      if (mounted) setState(() => _status = 'In Progress');
-                    }, 'Ticket accepted successfully.'),
-                  ),
-
-                if (_status == 'In Progress') ...[
-                  _sectionTitle('Ticket Status'),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: _status,
-                    dropdownColor: cardColor,
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: cardColor,
-                      border: OutlineInputBorder(
-                        borderSide: BorderSide(color: borderColor),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: borderColor),
-                      ),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'In Progress',
-                        child: Text('In Progress'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Resolved',
-                        child: Text('Resolved'),
-                      ),
-                    ],
-                    onChanged: _busy
-                        ? null
-                        : (value) async {
-                            if (value == null) return;
-                            if (value == 'Resolved') {
-                              if (_resolutionController.text.trim().isEmpty) {
-                                widget.onMessage(
-                                  'Enter the resolution before resolving the ticket.',
-                                  isError: true,
-                                );
-                                return;
-                              }
-                              await _resolveTicket();
-                            } else {
-                              await _runAction(() async {
-                                await ApiService.updateTicketStatus(
-                                  ticketId: _ticketId,
-                                  status: value,
-                                );
-                                if (mounted) setState(() => _status = value);
-                              }, 'Ticket status updated.');
-                            }
-                          },
-                  ),
-                  const SizedBox(height: 18),
-                ],
-
-                _sectionTitle('Technician Notes'),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _notesController,
-                  maxLines: 4,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Enter troubleshooting notes...',
-                    hintStyle: TextStyle(color: secondaryColor),
-                    filled: true,
-                    fillColor: cardColor,
-                    border: OutlineInputBorder(
-                      borderSide: BorderSide(color: borderColor),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: borderColor),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _button('Save Technician Note', Icons.note_alt_outlined, () {
-                  final note = _notesController.text.trim();
-                  if (note.isEmpty) {
-                    widget.onMessage(
-                      'Enter a note before saving.',
-                      isError: true,
-                    );
-                    return;
-                  }
-                  _runAction(() async {
-                    await ApiService.addTicketNote(
-                      ticketId: _ticketId,
-                      note: note,
-                    );
-                  }, 'Technician note saved.');
-                }, outlined: true),
-                const SizedBox(height: 20),
-
-                _sectionTitle('Resolution'),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _resolutionController,
-                  maxLines: 4,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Describe how the issue was resolved...',
-                    hintStyle: TextStyle(color: secondaryColor),
-                    filled: true,
-                    fillColor: cardColor,
-                    border: OutlineInputBorder(
-                      borderSide: BorderSide(color: borderColor),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: borderColor),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                if (_status != 'Resolved')
-                  _button(
-                    'Resolve Ticket',
-                    Icons.task_alt_outlined,
-                    _resolveTicket,
-                  ),
-
-                if (_status == 'Resolved')
-                  _button(
-                    'Reopen Ticket',
-                    Icons.refresh,
-                    () => _runAction(() async {
-                      await ApiService.reopenTicket(_ticketId);
-                      if (mounted) setState(() => _status = 'Open');
-                    }, 'Ticket reopened.'),
-                    outlined: true,
-                  ),
-
-                if (_busy) ...[
-                  const SizedBox(height: 12),
-                  const Center(child: CircularProgressIndicator()),
-                ],
-                const SizedBox(height: 14),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _resolveTicket() async {
-    final resolution = _resolutionController.text.trim();
-    if (resolution.isEmpty) {
-      widget.onMessage(
-        'Enter the resolution before resolving the ticket.',
-        isError: true,
-      );
-      return;
-    }
-
-    await _runAction(() async {
-      await ApiService.updateTicketStatus(
-        ticketId: _ticketId,
-        status: 'Resolved',
-        resolution: resolution,
-      );
-      if (mounted) {
-        setState(() => _status = 'Resolved');
-        Navigator.pop(context);
-        CelebrationDialog.show(
-          context,
-          title: 'Ticket Resolved! 🎉',
-          message: 'Great job! The ticket has been marked as resolved and the reporter has been notified.',
-        );
-      }
-    }, 'Ticket resolved successfully.');
-  }
-
-  Widget _sectionTitle(String title) => Text(
-    title,
-    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-  );
-
-  Widget _info(String label, String value, Color secondaryColor) => Padding(
-    padding: const EdgeInsets.only(bottom: 9),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 145,
-          child: Text(
-            label,
-            style: TextStyle(color: secondaryColor, fontSize: 12),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value.isEmpty ? 'Not provided' : value,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _button(
-    String label,
-    IconData icon,
-    VoidCallback onPressed, {
-    bool outlined = false,
-  }) {
-    if (outlined) {
-      return SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: OutlinedButton.icon(
-          onPressed: _busy ? null : onPressed,
-          icon: Icon(icon),
-          label: Text(label),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: navy,
-            side: const BorderSide(color: navy),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton.icon(
-        onPressed: _busy ? null : onPressed,
-        icon: Icon(icon),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: navy,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-      ),
-    );
   }
 }
