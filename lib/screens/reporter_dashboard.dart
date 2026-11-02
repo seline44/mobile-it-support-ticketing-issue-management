@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../models/ticket.dart';
 import '../services/api_service.dart';
-import '../services/theme_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/td_theme.dart';
 import '../widgets/triagedesk_logo.dart';
+import '../widgets/td_widgets.dart';
 import '../widgets/user_header.dart';
 import 'create_ticket_screen.dart';
 import 'ticket_details_screen.dart';
 import 'login_screen.dart';
+import 'settings_screen.dart';
 
 class ReporterDashboard extends StatefulWidget {
   const ReporterDashboard({super.key});
@@ -76,8 +78,8 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
     _refreshTickets();
   }
 
-  void _openTicketDetails(Ticket ticket) {
-    Navigator.push(
+  Future<void> _openTicketDetails(Ticket ticket) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => TicketDetailsScreen(
@@ -90,10 +92,13 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
           device: ticket.device,
           location: ticket.location,
           status: ticket.status,
+          resolution: ticket.resolution,
+          assignedTechnician: ticket.assignedTechnician,
           lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
         ),
       ),
     );
+    if (mounted) _refreshTickets();
   }
 
   void _confirmSignOut() {
@@ -535,30 +540,31 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: ['All', 'Open', 'In Progress', 'Resolved'].map((
-                filter,
-              ) {
-                final selected = _ticketFilter == filter;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(filter),
-                    selected: selected,
-                    onSelected: (_) => setState(() => _ticketFilter = filter),
-                    selectedColor: theme.colorScheme.primary.withValues(
-                      alpha: 0.15,
-                    ),
-                    labelStyle: TextStyle(
-                      color: selected
-                          ? theme.colorScheme.primary
-                          : textSecondary,
-                      fontWeight: selected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                    ),
-                  ),
-                );
-              }).toList(),
+              children: ['All', 'Open', 'In Progress', 'Resolved', 'Closed']
+                  .map((filter) {
+                    final selected = _ticketFilter == filter;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(filter),
+                        selected: selected,
+                        onSelected: (_) =>
+                            setState(() => _ticketFilter = filter),
+                        selectedColor: theme.colorScheme.primary.withValues(
+                          alpha: 0.15,
+                        ),
+                        labelStyle: TextStyle(
+                          color: selected
+                              ? theme.colorScheme.primary
+                              : textSecondary,
+                          fontWeight: selected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    );
+                  })
+                  .toList(),
             ),
           ),
           const SizedBox(height: 16),
@@ -624,9 +630,9 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
     final List<Map<String, dynamic>> list = [];
 
     for (var ticket in tickets) {
-      if (ticket.status == 'Resolved') {
+      if (ticket.status == 'Resolved' || ticket.status == 'Closed') {
         list.add({
-          'title': 'Ticket Resolved (${ticket.id})',
+          'title': 'Ticket ${ticket.status} (${ticket.id})',
           'subtitle': ticket.resolution != null && ticket.resolution!.isNotEmpty
               ? 'Resolution: ${ticket.resolution}'
               : 'Your ticket "${ticket.title}" has been resolved.',
@@ -850,155 +856,60 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
   // --- TAB 4: PROFILE & SETTINGS ---
   Widget _buildProfileTab() {
     final theme = Theme.of(context);
-
-    return AnimatedBuilder(
-      animation: ThemeService.instance,
-      builder: (context, _) {
-        final currentMode = ThemeService.instance.themeMode;
-
-        return ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundColor: theme.colorScheme.primary.withValues(
-                        alpha: 0.15,
-                      ),
-                      child: Text(
-                        _userInitials,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _displayName,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          if (_userEmail.isNotEmpty)
-                            Text(
-                              _userEmail,
-                              style: TextStyle(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                fontSize: 13,
-                              ),
-                            ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: success.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Text(
-                              'Reporter',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: success,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Appearance',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: theme.dividerColor),
+          ),
+          child: Row(
+            children: [
+              TdAvatar(initials: _userInitials, size: 54),
+              const SizedBox(width: 14),
+              Expanded(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _ThemeOptionTile(
-                      mode: ThemeMode.light,
-                      currentMode: currentMode,
-                      title: 'Light Mode',
-                      subtitle: 'Clean light background with dark text',
-                      icon: Icons.light_mode_rounded,
-                      iconColor: theme.colorScheme.tertiary,
-                      onSelect: () =>
-                          ThemeService.instance.setThemeMode(ThemeMode.light),
+                    Text(
+                      _displayName.isEmpty ? 'Reporter' : _displayName,
+                      style: theme.textTheme.titleLarge,
                     ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    _ThemeOptionTile(
-                      mode: ThemeMode.dark,
-                      currentMode: currentMode,
-                      title: 'Dark Mode',
-                      subtitle: 'Dark background comfortable in low light',
-                      icon: Icons.dark_mode_rounded,
-                      iconColor: theme.colorScheme.secondary,
-                      onSelect: () =>
-                          ThemeService.instance.setThemeMode(ThemeMode.dark),
-                    ),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    _ThemeOptionTile(
-                      mode: ThemeMode.system,
-                      currentMode: currentMode,
-                      title: 'System Default',
-                      subtitle: 'Automatically matches your device settings',
-                      icon: Icons.settings_system_daydream_rounded,
-                      iconColor: theme.colorScheme.primary,
-                      onSelect: () =>
-                          ThemeService.instance.setThemeMode(ThemeMode.system),
+                    if (_userEmail.isNotEmpty)
+                      Text(_userEmail, style: theme.textTheme.bodySmall),
+                    const SizedBox(height: 8),
+                    const TdPill(
+                      label: 'Reporter',
+                      background: TdColors.mint,
+                      foreground: TdColors.deepTeal,
+                      showDot: false,
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red,
-                  side: const BorderSide(color: Colors.red),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: _confirmSignOut,
-                icon: const Icon(Icons.logout_rounded),
-                label: const Text(
-                  'Sign Out',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        TdMenuTile(
+          icon: Icons.tune_rounded,
+          title: 'Settings',
+          subtitle: 'Appearance and app info',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+        TdMenuTile(
+          icon: Icons.logout_rounded,
+          title: 'Sign out',
+          color: TdColors.coral,
+          onTap: _confirmSignOut,
+        ),
+      ],
     );
   }
 
@@ -1213,6 +1124,7 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
       case 'In Progress':
         return const Color(0xFFDDF2FF);
       case 'Resolved':
+      case 'Closed':
         return const Color(0xFFDDF4E2);
       default:
         return const Color(0xFFE9EDF0);
@@ -1226,6 +1138,7 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
       case 'In Progress':
         return const Color(0xFF1780B1);
       case 'Resolved':
+      case 'Closed':
         return const Color(0xFF198653);
       default:
         return const Color(0xFF68747B);
@@ -1264,43 +1177,5 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
       default:
         return Icons.help_outline_rounded;
     }
-  }
-}
-
-class _ThemeOptionTile extends StatelessWidget {
-  final ThemeMode mode;
-  final ThemeMode currentMode;
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color iconColor;
-  final VoidCallback onSelect;
-
-  const _ThemeOptionTile({
-    required this.mode,
-    required this.currentMode,
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.iconColor,
-    required this.onSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = mode == currentMode;
-
-    return ListTile(
-      onTap: onSelect,
-      leading: Icon(icon, color: iconColor),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-      trailing: selected
-          ? Icon(
-              Icons.check_circle_rounded,
-              color: Theme.of(context).colorScheme.primary,
-            )
-          : const Icon(Icons.circle_outlined, color: Colors.grey),
-    );
   }
 }

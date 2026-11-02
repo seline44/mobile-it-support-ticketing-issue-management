@@ -23,7 +23,7 @@ router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
 VALID_IMPACTS = {"Low", "Medium", "High"}
 VALID_URGENCIES = {"Low", "Medium", "High"}
-VALID_STATUSES = {"Open", "In Progress", "Pending", "Resolved"}
+VALID_STATUSES = {"Open", "In Progress", "Pending", "Resolved", "Closed"}
 
 
 def calculate_priority(impact: str, urgency: str) -> str:
@@ -264,41 +264,68 @@ def update_ticket_status(
                 status_code=403,
                 detail="You can only update tickets assigned to you",
             )
+        if (
+            request.status in {"Resolved", "Closed"}
+            and ticket.status != "In Progress"
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Only in-progress tickets can be resolved or closed",
+            )
+
+    resolution = request.resolution.strip() if request.resolution else None
+    note_text = request.note.strip() if request.note else None
+    if request.status in {"Resolved", "Closed"} and not resolution:
+        raise HTTPException(
+            status_code=422,
+            detail="A resolution note is required to resolve or close a ticket",
+        )
+    if request.note is not None and not note_text:
+        raise HTTPException(status_code=422, detail="Note cannot be empty")
 
     old_status = ticket.status
+    now = datetime.now(timezone.utc)
     ticket.status = request.status
-    ticket.updated_at = datetime.now(timezone.utc)
+    ticket.updated_at = now
 
     history_details = None
-
-    if request.status == "Resolved":
-        ticket.resolved_at = datetime.now(timezone.utc)
-
-        if request.resolution is not None:
-            resolution = request.resolution.strip()
-            if not resolution:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Resolution cannot be empty",
-                )
-            ticket.resolution = resolution
-            history_details = f"Resolution: {resolution}"
-    else:
+    if request.status in {"Resolved", "Closed"}:
+        ticket.resolved_at = now
+        ticket.resolution = resolution
+        history_details = f"Resolution: {resolution}"
+    elif old_status in {"Resolved", "Closed"}:
         ticket.resolved_at = None
 
-    record_history(
-        db,
-        ticket,
-        user.id,
-        "Status changed",
-        old_status=old_status,
-        new_status=ticket.status,
-        details=history_details,
+    action = (
+        f"Ticket {request.status.lower()}"
+        if request.status in {"Resolved", "Closed"}
+        else "Status changed"
     )
 
-    db.commit()
-    db.refresh(ticket)
-    return serialize_ticket(db, ticket)
+    try:
+        if note_text:
+            db.add(
+                TicketNote(
+                    ticket_id=ticket.id,
+                    author_id=user.id,
+                    note=note_text,
+                )
+            )
+        record_history(
+            db,
+            ticket,
+            user.id,
+            action,
+            old_status=old_status,
+            new_status=ticket.status,
+            details=history_details,
+        )
+        db.commit()
+        db.refresh(ticket)
+        return serialize_ticket(db, ticket)
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post("/{ticket_id}/reopen", response_model=TicketResponse)
@@ -314,10 +341,10 @@ def reopen_ticket(
     if ticket.reporter_id != user.id:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    if ticket.status != "Resolved":
+    if ticket.status not in {"Resolved", "Closed"}:
         raise HTTPException(
             status_code=409,
-            detail="Only resolved tickets can be reopened",
+            detail="Only resolved or closed tickets can be reopened",
         )
 
     reason = request.reason.strip()
@@ -439,9 +466,21 @@ def list_ticket_notes(
     ticket = get_ticket_or_404(db, ticket_id)
     check_ticket_access(ticket, user)
 
-    return (
-        db.query(TicketNote)
+    rows = (
+        db.query(TicketNote, User.full_name)
+        .join(User, TicketNote.author_id == User.id)
         .filter(TicketNote.ticket_id == ticket.id)
         .order_by(TicketNote.created_at.asc())
         .all()
     )
+    return [
+        {
+            "id": note.id,
+            "ticket_id": note.ticket_id,
+            "author_id": note.author_id,
+            "author_name": author_name,
+            "note": note.note,
+            "created_at": note.created_at,
+        }
+        for note, author_name in rows
+    ]

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../models/ticket.dart';
 import '../services/api_service.dart';
-import '../theme/app_theme.dart';
-import '../widgets/triagedesk_logo.dart';
-import '../widgets/user_header.dart';
+import '../theme/td_theme.dart';
+import '../widgets/td_ticket_widgets.dart';
+import '../widgets/td_widgets.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
 import 'ticket_details_screen.dart';
@@ -17,15 +17,26 @@ class TechnicianDashboard extends StatefulWidget {
 }
 
 class _TechnicianDashboardState extends State<TechnicianDashboard> {
+  // 0 Home, 1 Assigned, 2 Tickets, 3 Profile
   int _currentIndex = 0;
-  static const Color blue = AppTheme.accentTeal;
-  static const Color success = AppTheme.accentTeal;
-  static const Color warning = AppTheme.warningGold;
-  static const Color danger = Color(0xFFDC2626);
 
   List<Ticket> _tickets = [];
+  final Set<String> _acceptingTicketIds = {};
   bool _loading = true;
   String? _error;
+
+  String _assignedFilter = 'All';
+  String _ticketFilter = 'All';
+  final _searchController = TextEditingController();
+
+  static const _statusFilters = [
+    'All',
+    'Open',
+    'In Progress',
+    'Pending',
+    'Resolved',
+    'Closed',
+  ];
 
   @override
   void initState() {
@@ -33,6 +44,13 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     _refreshTickets();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // ---- Data logic (unchanged) ----------------------------------------------
   Future<void> _refreshTickets() async {
     if (mounted) {
       setState(() {
@@ -82,8 +100,52 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
       )
       .length;
 
+  List<Ticket> get _availableTickets => _tickets
+      .where(
+        (ticket) =>
+            ticket.status == 'Open' && ticket.assignedTechnicianId == null,
+      )
+      .toList();
+
+  Future<void> _acceptTicket(Ticket ticket) async {
+    final ticketId = int.tryParse(ticket.id);
+    if (ticketId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not accept this ticket.')),
+      );
+      return;
+    }
+
+    setState(() => _acceptingTicketIds.add(ticket.id));
+    try {
+      final response = await ApiService.acceptTicket(ticketId);
+      final acceptedTicket = Ticket.fromJson(response);
+      if (!mounted) return;
+
+      setState(() {
+        _tickets = _tickets
+            .map((item) => item.id == ticket.id ? acceptedTicket : item)
+            .toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${tdTicketLabel(ticket)} accepted.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _acceptingTicketIds.remove(ticket.id));
+      }
+    }
+  }
+
   Future<void> _openTicket(Ticket ticket) async {
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => TicketDetailsScreen(
@@ -96,46 +158,19 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
           device: ticket.device,
           location: ticket.location,
           status: ticket.status,
+          resolution: ticket.resolution,
+          assignedTechnician: ticket.assignedTechnician,
           lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
         ),
       ),
     );
+    // The technician may have changed the ticket, so refresh on return.
+    if (mounted) _refreshTickets();
   }
 
   Future<void> _confirmSignOut() async {
-    final shouldSignOut = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: Theme.of(dialogContext).cardColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text(
-            'Sign Out',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          content: const Text(
-            'Are you sure you want to sign out of TriageDesk?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFDC2626),
-              ),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Sign Out'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (shouldSignOut == true && mounted) {
+    final shouldSignOut = await showTdSignOutDialog(context);
+    if (shouldSignOut && mounted) {
       ApiService.logout();
       Navigator.pushAndRemoveUntil(
         context,
@@ -145,102 +180,97 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     }
   }
 
+  // ---- Derived data ----------------------------------------------------------
+  /// Tickets assigned to this technician (never matches when id is unknown).
+  List<Ticket> get _mine {
+    final id = _technicianId;
+    if (id == null) return [];
+    return _tickets.where((t) => t.assignedTechnicianId == id).toList();
+  }
+
+  List<Ticket> get _myActive => _mine.where(tdIsActive).toList();
+
+  /// Most urgent active ticket: highest priority, then oldest first.
+  Ticket? get _upNext {
+    final active = _myActive;
+    if (active.isEmpty) return null;
+    active.sort((a, b) {
+      final byPriority = TdSignalBars.levelFor(b.priority)
+          .compareTo(TdSignalBars.levelFor(a.priority));
+      if (byPriority != 0) return byPriority;
+      return a.createdAt.compareTo(b.createdAt);
+    });
+    return active.first;
+  }
+
+  String get _firstName {
+    final name = _technicianName.trim();
+    if (name.isEmpty) return 'there';
+    return name.split(RegExp(r'\s+')).first;
+  }
+
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  Map<String, int> _countsByStatus(List<Ticket> list) => {
+    'All': list.length,
+    for (final s in _statusFilters.skip(1))
+      s: list.where((t) => t.status == s).length,
+  };
+
+  // ---- UI --------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final background = theme.scaffoldBackgroundColor;
-    final secondaryColor = theme.colorScheme.onSurfaceVariant;
-
     return Scaffold(
-      backgroundColor: background,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        title: const Row(
-          mainAxisSize: MainAxisSize.min,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
           children: [
-            TriageDeskLogo(size: 30),
-            SizedBox(width: 8),
-            Text(
-              'TriageDesk',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.3,
-                fontSize: 18,
-              ),
+            TdUserHeader(
+              name: _technicianName.isEmpty ? 'Technician' : _technicianName,
+              role: 'Technician',
+              initials: ApiService.currentUserInitials,
+              showDot: _pendingCount > 0,
+              onBellTap: _refreshTickets,
+              onAvatarTap: () => setState(() => _currentIndex = 3),
+            ),
+            Expanded(
+              child: switch (_currentIndex) {
+                1 => _buildAssignedTab(),
+                2 => _buildTicketsTab(),
+                3 => _buildProfileTab(),
+                _ => _buildHomeTab(),
+              },
             ),
           ],
         ),
-        actions: [
-          Stack(
-            alignment: Alignment.topRight,
-            children: [
-              IconButton(
-                onPressed: _refreshTickets,
-                icon: const Icon(Icons.notifications_outlined),
-                tooltip: 'Notifications',
-              ),
-              Positioned(
-                right: 10,
-                top: 10,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 4),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: CircleAvatar(
-              radius: 17,
-              backgroundColor: blue,
-              child: Text(
-                ApiService.currentUserInitials,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
-      body: switch (_currentIndex) {
-        0 => _buildHomeTab(theme, secondaryColor),
-        1 => _buildAssignedTab(theme, secondaryColor),
-        2 => _buildAllTicketsTab(theme, secondaryColor),
-        3 => _buildProfileTab(theme),
-        _ => _buildHomeTab(theme, secondaryColor),
-      },
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: blue,
-        unselectedItemColor: secondaryColor,
-        onTap: (index) => setState(() => _currentIndex = index),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_rounded),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
             label: 'Home',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.assignment_ind_outlined),
+            selectedIcon: Icon(Icons.assignment_ind_rounded),
             label: 'Assigned',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.confirmation_number_outlined),
+            selectedIcon: Icon(Icons.confirmation_number_rounded),
             label: 'Tickets',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
             label: 'Profile',
           ),
         ],
@@ -248,590 +278,413 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     );
   }
 
-  Widget _buildHomeTab(ThemeData theme, Color secondaryColor) {
+  // ---- Shared body states ----------------------------------------------------
+  Widget? _loadingOrError() {
+    if (_loading && _tickets.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(40),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null && _tickets.isEmpty) {
+      return TdEmptyState(
+        icon: Icons.cloud_off_outlined,
+        title: 'Could not load tickets',
+        message: _error!,
+        actionLabel: 'Try again',
+        onAction: _refreshTickets,
+      );
+    }
+    return null;
+  }
+
+  // ---- Home --------------------------------------------------------------------
+  Widget _buildHomeTab() {
+    final theme = Theme.of(context);
+    final next = _upNext;
+    final others = _myActive.where((t) => !identical(t, next)).take(3).toList();
+    final urgent = _myActive
+        .where((t) => TdSignalBars.levelFor(t.priority) >= 3)
+        .length;
+
+    final recent =
+        (_tickets.toList()
+              ..sort((a, b) => tdLastTouched(b).compareTo(tdLastTouched(a))))
+            .take(3)
+            .toList();
+    final available = _availableTickets.take(3).toList();
+
     return RefreshIndicator(
-      color: blue,
+      color: theme.colorScheme.primary,
       onRefresh: _refreshTickets,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
         children: [
-          buildUserHeader(context, roleTitle: 'Technician', color: blue),
-          // Greeting
           Text(
-            'Good morning, $_technicianName',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+            '$_greeting, $_firstName.',
+            style: theme.textTheme.headlineMedium,
           ),
           const SizedBox(height: 4),
           Text(
-            'Here are your assigned tickets.',
-            style: TextStyle(fontSize: 13, color: secondaryColor),
+            urgent > 0
+                ? 'You have $urgent ticket${urgent == 1 ? '' : 's'} that need${urgent == 1 ? 's' : ''} attention first.'
+                : 'Here\'s what\'s on your plate today.',
+            style: theme.textTheme.bodySmall?.copyWith(fontSize: 13.5),
           ),
-          const SizedBox(height: 18),
-
-          // 3 Summary Cards (Assigned, In Progress, Pending)
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
-                child: _summaryCard(
-                  'Assigned',
-                  _assignedCount,
-                  Icons.person_outline_rounded,
-                  blue,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _summaryCard(
-                  'In Progress',
-                  _progressCount,
-                  Icons.access_time_rounded,
-                  blue,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _summaryCard(
-                  'Pending',
-                  _pendingCount,
-                  Icons.hourglass_empty_rounded,
-                  warning,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Assigned Tickets Header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Assigned Tickets',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              TextButton(
-                onPressed: _refreshTickets,
-                child: const Text(
-                  'View all',
-                  style: TextStyle(
-                    color: blue,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // Ticket List
-          if (_loading && _tickets.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(35),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error != null && _tickets.isEmpty)
-            _messageState(
-              icon: Icons.cloud_off_outlined,
-              title: 'Could not load tickets',
-              message: _error!,
-            )
-          else if (_tickets.isEmpty)
-            _messageState(
-              icon: Icons.inbox_outlined,
-              title: 'No assigned tickets',
-              message: 'Assigned support tickets will appear here.',
-            )
-          else
-            ..._tickets.map((t) => _ticketCard(t, secondaryColor)),
-
-          const SizedBox(height: 24),
-
-          // Recent Activity Section
-          const Text(
-            'Recent Activity',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          if (_tickets.isEmpty)
-            Text(
-              'No recent ticket activity.',
-              style: TextStyle(color: secondaryColor),
-            )
-          else
-            ...(_tickets.toList()..sort(
-                  (a, b) =>
-                      (b.lastModifiedAt ?? b.updatedAt ?? b.createdAt)
-                          .compareTo(
-                            a.lastModifiedAt ??
-                                a.updatedAt ??
-                                a.createdAt,
-                          ),
-                ))
-                .take(3)
-                .map(
-                  (ticket) => _activityItem(
-                    initials: ApiService.currentUserInitials,
-                    action: ticket.lastModifiedBy == null
-                        ? 'Ticket ${ticket.ticketNumber ?? ticket.id} · ${ticket.status}'
-                        : '${ticket.lastModifiedBy} updated ${ticket.ticketNumber ?? ticket.id}',
-                    description: ticket.title,
-                    time: _timeAgo(
-                      ticket.lastModifiedAt ??
-                          ticket.updatedAt ??
-                          ticket.createdAt,
-                    ),
-                    color: blue,
-                  ),
-                ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAssignedTab(ThemeData theme, Color secondaryColor) {
-    final assignedTickets = _tickets
-        .where((ticket) => ticket.assignedTechnicianId == _technicianId)
-        .toList();
-
-    return RefreshIndicator(
-      color: blue,
-      onRefresh: _refreshTickets,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
-        children: [
-          buildUserHeader(context, roleTitle: 'Technician', color: blue),
-          const Text(
-            'Assigned Tickets',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${assignedTickets.length} assigned tickets',
-            style: TextStyle(fontSize: 13, color: secondaryColor),
-          ),
-          const SizedBox(height: 16),
-          if (_loading && _tickets.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(35),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error != null && _tickets.isEmpty)
-            _messageState(
-              icon: Icons.cloud_off_outlined,
-              title: 'Could not load tickets',
-              message: _error!,
-            )
-          else if (assignedTickets.isEmpty)
-            _messageState(
-              icon: Icons.inbox_outlined,
-              title: 'No assigned tickets',
-              message: 'Tickets assigned to you will appear here.',
-            )
-          else
-            ...assignedTickets.map((t) => _ticketCard(t, secondaryColor)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAllTicketsTab(ThemeData theme, Color secondaryColor) {
-    return RefreshIndicator(
-      color: blue,
-      onRefresh: _refreshTickets,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
-        children: [
-          buildUserHeader(context, roleTitle: 'Technician', color: blue),
-          const Text(
-            'All Support Tickets',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${_tickets.length} total tickets',
-            style: TextStyle(fontSize: 13, color: secondaryColor),
-          ),
-          const SizedBox(height: 16),
-          if (_loading && _tickets.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(35),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error != null && _tickets.isEmpty)
-            _messageState(
-              icon: Icons.cloud_off_outlined,
-              title: 'Could not load tickets',
-              message: _error!,
-            )
-          else if (_tickets.isEmpty)
-            _messageState(
-              icon: Icons.inbox_outlined,
-              title: 'No tickets available',
-              message: 'Support tickets will appear here.',
-            )
-          else
-            ..._tickets.map((t) => _ticketCard(t, secondaryColor)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileTab(ThemeData theme) {
-    final secondaryColor = theme.colorScheme.onSurfaceVariant;
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        buildUserHeader(context, roleTitle: 'Technician', color: blue),
-        const SizedBox(height: 8),
-        Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: blue.withValues(alpha: 0.15),
-              foregroundColor: blue,
-              child: Text(ApiService.currentUserInitials),
-            ),
-            title: Text(
-              _technicianName,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            subtitle: Text(
-              _technicianEmail.isEmpty
-                  ? 'Technician'
-                  : '$_technicianEmail\nTechnician',
-              style: TextStyle(color: secondaryColor),
-            ),
-            isThreeLine: _technicianEmail.isNotEmpty,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.settings_outlined),
-            title: const Text('Settings'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-          ),
-        ),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.logout_rounded, color: Colors.red),
-            title: const Text('Sign out'),
-            onTap: _confirmSignOut,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _summaryCard(String title, int value, IconData icon, Color iconColor) {
-    final theme = Theme.of(context);
-    final cardColor = theme.cardColor;
-    final borderColor = theme.colorScheme.outlineVariant;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: iconColor, size: 22),
-          const SizedBox(height: 12),
-          Text(
-            '$value',
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _ticketCard(Ticket ticket, Color secondaryColor) {
-    final theme = Theme.of(context);
-    final statusColor = _statusColor(ticket.status);
-    final cardColor = theme.cardColor;
-    final borderColor = theme.colorScheme.outlineVariant;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _openTicket(ticket),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: blue.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  _categoryIcon(ticket.category),
-                  color: blue,
-                  size: 21,
+                child: TdStatCard(
+                  value: _assignedCount,
+                  label: 'Assigned',
+                  color: theme.colorScheme.onSurface,
                 ),
               ),
               const SizedBox(width: 12),
+              Expanded(
+                child: TdStatCard(
+                  value: _progressCount,
+                  label: 'In progress',
+                  color: TdColors.progressFg,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TdStatCard(
+                  value: _pendingCount,
+                  label: 'Unclaimed',
+                  color: TdColors.openFg,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          if (_loadingOrError() != null)
+            _loadingOrError()!
+          else ...[
+            if (next != null) ...[
+              _UpNextCard(ticket: next, onOpen: () => _openTicket(next)),
+              const SizedBox(height: 22),
+            ],
+            if (_mine.isEmpty)
+              const TdEmptyState(
+                icon: Icons.inbox_outlined,
+                title: 'Nothing assigned yet',
+                message: 'Tickets assigned to you will show up here.',
+              )
+            else if (others.isNotEmpty) ...[
+              TdSectionHeader(
+                title: 'Assigned to you',
+                actionLabel: 'View all',
+                onAction: () => setState(() => _currentIndex = 1),
+              ),
+              for (final t in others)
+                TdTicketCard(ticket: t, onTap: () => _openTicket(t)),
+            ],
+            if (available.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              const TdSectionHeader(title: 'Available to claim'),
+              for (final t in available)
+                TdTicketCard(
+                  ticket: t,
+                  onTap: () => _openTicket(t),
+                  onAccept: () => _acceptTicket(t),
+                  isAccepting: _acceptingTicketIds.contains(t.id),
+                ),
+            ],
+            const SizedBox(height: 14),
+            const TdSectionHeader(title: 'Recent activity'),
+            if (recent.isEmpty)
+              Text(
+                'No recent ticket activity.',
+                style: theme.textTheme.bodySmall,
+              )
+            else
+              for (final t in recent)
+                TdActivityItem(
+                  initials: ApiService.currentUserInitials,
+                  action: t.lastModifiedBy == null
+                      ? '${tdTicketLabel(t)} · ${t.status}'
+                      : '${t.lastModifiedBy} updated ${tdTicketLabel(t)}',
+                  description: t.title,
+                  time: tdTimeAgo(tdLastTouched(t)),
+                ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ---- Assigned ---------------------------------------------------------------
+  Widget _buildAssignedTab() {
+    final theme = Theme.of(context);
+    final mine = _mine;
+    final visible = _assignedFilter == 'All'
+        ? mine
+        : mine.where((t) => t.status == _assignedFilter).toList();
+
+    return RefreshIndicator(
+      onRefresh: _refreshTickets,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+        children: [
+          Text('Assigned to me', style: theme.textTheme.headlineMedium),
+          const SizedBox(height: 14),
+          TdFilterChips(
+            options: _statusFilters,
+            selected: _assignedFilter,
+            counts: _countsByStatus(mine),
+            onSelected: (v) => setState(() => _assignedFilter = v),
+          ),
+          const SizedBox(height: 16),
+          if (_loadingOrError() != null)
+            _loadingOrError()!
+          else if (visible.isEmpty)
+            TdEmptyState(
+              icon: Icons.assignment_turned_in_outlined,
+              title: mine.isEmpty ? 'Nothing assigned yet' : 'No tickets here',
+              message: mine.isEmpty
+                  ? 'Tickets assigned to you will show up here.'
+                  : 'Try a different status filter.',
+            )
+          else
+            for (final t in visible)
+              TdTicketCard(
+                ticket: t,
+                onTap: () => _openTicket(t),
+                onAccept: t.status == 'Open' && t.assignedTechnicianId == null
+                    ? () => _acceptTicket(t)
+                    : null,
+                isAccepting: _acceptingTicketIds.contains(t.id),
+              ),
+        ],
+      ),
+    );
+  }
+
+  // ---- All tickets ----------------------------------------------------------
+  Widget _buildTicketsTab() {
+    final theme = Theme.of(context);
+    final query = _searchController.text.trim().toLowerCase();
+
+    final visible = _tickets.where((t) {
+      final matchesFilter = _ticketFilter == 'All' || t.status == _ticketFilter;
+      final matchesQuery =
+          query.isEmpty ||
+          t.title.toLowerCase().contains(query) ||
+          t.category.toLowerCase().contains(query) ||
+          tdTicketLabel(t).toLowerCase().contains(query);
+      return matchesFilter && matchesQuery;
+    }).toList();
+
+    return RefreshIndicator(
+      onRefresh: _refreshTickets,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+        children: [
+          Text('All tickets', style: theme.textTheme.headlineMedium),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _searchController,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Search by title, ID or category',
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
+              suffixIcon: query.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 19),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {});
+                      },
+                    ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TdFilterChips(
+            options: _statusFilters,
+            selected: _ticketFilter,
+            counts: _countsByStatus(_tickets),
+            onSelected: (v) => setState(() => _ticketFilter = v),
+          ),
+          const SizedBox(height: 16),
+          if (_loadingOrError() != null)
+            _loadingOrError()!
+          else if (visible.isEmpty)
+            const TdEmptyState(
+              icon: Icons.search_off_rounded,
+              title: 'No tickets found',
+              message: 'Try a different search or filter.',
+            )
+          else
+            for (final t in visible)
+              TdTicketCard(ticket: t, onTap: () => _openTicket(t)),
+        ],
+      ),
+    );
+  }
+
+  // ---- Profile ----------------------------------------------------------------
+  Widget _buildProfileTab() {
+    final theme = Theme.of(context);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: theme.dividerColor),
+          ),
+          child: Row(
+            children: [
+              TdAvatar(initials: ApiService.currentUserInitials, size: 54),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      ticket.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      _technicianName.isEmpty ? 'Technician' : _technicianName,
+                      style: theme.textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          ticket.ticketNumber ?? 'ID ${ticket.id}',
-                          style: TextStyle(fontSize: 12, color: secondaryColor),
-                        ),
-                        const SizedBox(width: 6),
-                        Text('•', style: TextStyle(color: secondaryColor)),
-                        const SizedBox(width: 6),
-                        Text(
-                          ticket.priority,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: _priorityColor(ticket.priority),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _timeAgo(
-                        ticket.lastModifiedAt ??
-                            ticket.updatedAt ??
-                            ticket.createdAt,
-                      ),
-                      style: TextStyle(fontSize: 11, color: secondaryColor),
+                    if (_technicianEmail.isNotEmpty)
+                      Text(_technicianEmail, style: theme.textTheme.bodySmall),
+                    const SizedBox(height: 8),
+                    const TdPill(
+                      label: 'Technician',
+                      background: TdColors.progressBg,
+                      foreground: TdColors.progressFg,
+                      showDot: false,
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  ticket.status,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: statusColor,
-                  ),
                 ),
               ),
             ],
           ),
         ),
-      ),
+        const SizedBox(height: 16),
+        TdMenuTile(
+          icon: Icons.tune_rounded,
+          title: 'Settings',
+          subtitle: 'Appearance and app info',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+        TdMenuTile(
+          icon: Icons.logout_rounded,
+          title: 'Sign out',
+          color: TdColors.coral,
+          onTap: _confirmSignOut,
+        ),
+      ],
     );
   }
+}
 
-  Widget _activityItem({
-    required String initials,
-    required String action,
-    required String description,
-    required String time,
-    required Color color,
-  }) {
-    final theme = Theme.of(context);
-    final cardColor = theme.cardColor;
-    final borderColor = theme.colorScheme.outlineVariant;
-    final secondaryColor = theme.colorScheme.onSurfaceVariant;
+// ---------------------------------------------------------------------------
+// "Up next" hero card
+// ---------------------------------------------------------------------------
+class _UpNextCard extends StatelessWidget {
+  final Ticket ticket;
+  final VoidCallback onOpen;
+  const _UpNextCard({required this.ticket, required this.onOpen});
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: color.withValues(alpha: 0.2),
-            child: Text(
-              initials,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        action,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Text(
-                      time,
-                      style: TextStyle(fontSize: 11, color: secondaryColor),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  description,
-                  style: TextStyle(fontSize: 12, color: secondaryColor),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _messageState({
-    required IconData icon,
-    required String title,
-    required String message,
-  }) {
-    final theme = Theme.of(context);
+  @override
+  Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF04404A), TdColors.teal],
+        ),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Up next',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  ticket.priority,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 10),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            ticket.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
+            ),
+          ),
           const SizedBox(height: 4),
           Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: theme.colorScheme.onSurfaceVariant,
-              fontSize: 12,
+            '${tdTicketLabel(ticket)} · ${ticket.category} · '
+            '${tdTimeAgo(ticket.createdAt)}',
+            style: TdFonts.monoStyle.copyWith(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 11.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: FilledButton(
+              onPressed: onOpen,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: TdColors.deepTeal,
+                minimumSize: const Size(0, 46),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+              ),
+              child: const Text('Open ticket'),
             ),
           ),
         ],
       ),
     );
-  }
-
-  String _timeAgo(DateTime dateTime) {
-    final elapsed = DateTime.now().difference(dateTime.toLocal());
-    if (elapsed.inDays > 0) return '${elapsed.inDays}d ago';
-    if (elapsed.inHours > 0) return '${elapsed.inHours}h ago';
-    if (elapsed.inMinutes > 0) return '${elapsed.inMinutes}m ago';
-    return 'Just now';
-  }
-
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'Open':
-        return danger;
-      case 'In Progress':
-        return blue;
-      case 'Resolved':
-        return success;
-      case 'Pending':
-        return warning;
-      default:
-        return blue;
-    }
-  }
-
-  Color _priorityColor(String priority) {
-    switch (priority) {
-      case 'Critical':
-        return const Color(0xFFDC2626);
-      case 'High':
-        return danger;
-      case 'Medium':
-        return warning;
-      default:
-        return success;
-    }
-  }
-
-  IconData _categoryIcon(String category) {
-    switch (category.toLowerCase()) {
-      case 'hardware':
-        return Icons.devices_outlined;
-      case 'software':
-        return Icons.apps_outlined;
-      case 'network':
-        return Icons.wifi_rounded;
-      case 'email':
-        return Icons.email_outlined;
-      case 'account access':
-        return Icons.lock_outline_rounded;
-      default:
-        return Icons.help_outline_rounded;
-    }
   }
 }

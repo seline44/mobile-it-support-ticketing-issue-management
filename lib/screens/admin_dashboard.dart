@@ -2,18 +2,47 @@ import 'package:flutter/material.dart';
 
 import '../models/ticket.dart';
 import '../services/api_service.dart';
-import '../theme/app_theme.dart';
-import '../widgets/triagedesk_logo.dart';
-import '../widgets/user_header.dart';
+import '../theme/td_theme.dart';
+import '../widgets/td_ticket_widgets.dart';
+import '../widgets/td_widgets.dart';
 import 'admin_users_screen.dart';
+import 'login_screen.dart';
 import 'settings_screen.dart';
 import 'ticket_details_screen.dart';
 
-const Color adminNavy = AppTheme.charcoal;
-const Color adminBlue = AppTheme.accentTeal;
-const Color adminGreen = AppTheme.accentTeal;
-const Color adminAmber = AppTheme.warningGold;
-const Color adminRed = Color(0xFFDC2626);
+// Kept for any other file that imports these names from here.
+const Color adminNavy = TdColors.deepTeal;
+const Color adminBlue = TdColors.teal;
+const Color adminGreen = TdColors.green;
+const Color adminAmber = TdColors.amber;
+const Color adminRed = TdColors.coral;
+
+Future<void> _openTicketDetails(
+  BuildContext context,
+  Ticket ticket, {
+  VoidCallback? onReturn,
+}) async {
+  await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => TicketDetailsScreen(
+        id: ticket.id,
+        title: ticket.title,
+        description: ticket.description,
+        category: ticket.category,
+        impact: ticket.impact,
+        urgency: ticket.urgency,
+        device: ticket.device,
+        location: ticket.location,
+        status: ticket.status,
+        resolution: ticket.resolution,
+        assignedTechnician: ticket.assignedTechnician,
+        lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
+      ),
+    ),
+  );
+  onReturn?.call();
+}
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -27,13 +56,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
   List<Ticket> _tickets = [];
   bool _isLoading = true;
   String? _loadError;
+  int _pendingApprovals = 0;
 
   @override
   void initState() {
     super.initState();
     _loadTickets();
+    _loadPendingApprovals();
   }
 
+  // ---- Data logic ------------------------------------------------------------
   Future<void> _loadTickets() async {
     if (mounted) setState(() => _isLoading = true);
     try {
@@ -57,30 +89,107 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  void _openTicketDetails(Ticket ticket) {
-    Navigator.push(
+  /// Best effort: powers the "accounts waiting" banner. Errors are ignored so
+  /// the dashboard still works if the users endpoint is unavailable.
+  Future<void> _loadPendingApprovals() async {
+    try {
+      final users = await ApiService.getAllUsers();
+      final pending = users.where((u) {
+        if (u is! Map) return false;
+        final s = (u['approval_status'] ?? 'Pending')
+            .toString()
+            .trim()
+            .toLowerCase();
+        return s.isEmpty || s == 'pending';
+      }).length;
+      if (!mounted) return;
+      setState(() => _pendingApprovals = pending);
+    } catch (_) {}
+  }
+
+  Future<void> _refreshAll() async {
+    await Future.wait([_loadTickets(), _loadPendingApprovals()]);
+  }
+
+  Future<void> _openUsers() async {
+    await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => TicketDetailsScreen(
-          id: ticket.id,
-          title: ticket.title,
-          description: ticket.description,
-          category: ticket.category,
-          impact: ticket.impact,
-          urgency: ticket.urgency,
-          device: ticket.device,
-          location: ticket.location,
-          status: ticket.status,
-          lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
+      MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
+    );
+    if (mounted) _loadPendingApprovals();
+  }
+
+  Future<void> _signOut() async {
+    final confirmed = await showTdSignOutDialog(context);
+    if (confirmed && mounted) {
+      ApiService.logout();
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+  }
+
+  void _openAccountSheet() {
+    final theme = Theme.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  TdAvatar(initials: ApiService.currentUserInitials, size: 50),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          ApiService.currentUserName.isEmpty
+                              ? 'Administrator'
+                              : ApiService.currentUserName,
+                          style: theme.textTheme.titleLarge,
+                        ),
+                        if (ApiService.currentUserEmail.isNotEmpty)
+                          Text(
+                            ApiService.currentUserEmail,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              TdMenuTile(
+                icon: Icons.logout_rounded,
+                title: 'Sign out',
+                color: TdColors.coral,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _signOut();
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  // ---- UI --------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     final tickets = _tickets;
 
     final total = tickets.length;
@@ -96,127 +205,79 @@ class _AdminDashboardState extends State<AdminDashboard> {
           resolvedAt.day == now.day;
     }).length;
 
+    final Widget body = switch (_currentIndex) {
+      1 =>
+        _isLoading && tickets.isEmpty
+            ? const Center(child: CircularProgressIndicator())
+            : _loadError != null && tickets.isEmpty
+            ? _buildLoadError()
+            : AdminTicketsScreen(tickets: tickets, onRefresh: _loadTickets),
+      3 => AdminReportsScreen(tickets: tickets),
+      _ =>
+        _isLoading && tickets.isEmpty
+            ? const Center(child: CircularProgressIndicator())
+            : _loadError != null && tickets.isEmpty
+            ? _buildLoadError()
+            : _buildHomeTab(total, open, inProgress, resolvedToday, tickets),
+    };
+
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: theme.scaffoldBackgroundColor,
-        foregroundColor: colors.onSurface,
-        elevation: 0,
-        titleSpacing: 20,
-        title: Row(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
           children: [
-            const TriageDeskLogo(size: 32),
-            const SizedBox(width: 8),
-            Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: 'Triage',
-                    style: TextStyle(color: colors.onSurface),
-                  ),
-                  TextSpan(
-                    text: 'Desk',
-                    style: TextStyle(color: colors.primary),
-                  ),
-                ],
-              ),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            TdUserHeader(
+              name: ApiService.currentUserName.isEmpty
+                  ? 'Administrator'
+                  : ApiService.currentUserName,
+              role: 'Administrator',
+              initials: ApiService.currentUserInitials,
+              showDot: _pendingApprovals > 0,
+              onAvatarTap: _openAccountSheet,
+              onBellTap: _pendingApprovals > 0 ? _openUsers : _refreshAll,
             ),
-            const Spacer(),
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.notifications_none_rounded, size: 24),
-                Positioned(
-                  right: 0,
-                  top: 2,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 10),
-            Tooltip(
-              message: ApiService.currentUserEmail.isEmpty
-                  ? ApiService.currentUserName
-                  : '${ApiService.currentUserName}\n${ApiService.currentUserEmail}',
-              child: CircleAvatar(
-                radius: 17,
-                backgroundColor: AppTheme.accentTeal,
-                child: Text(
-                  ApiService.currentUserInitials,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
+            Expanded(child: body),
           ],
         ),
       ),
-      body: switch (_currentIndex) {
-        1 =>
-          _isLoading && tickets.isEmpty
-              ? const Center(child: CircularProgressIndicator())
-              : _loadError != null && tickets.isEmpty
-              ? _buildLoadError(colors)
-              : AdminTicketsScreen(tickets: tickets, onRefresh: _loadTickets),
-        3 => AdminReportsScreen(tickets: tickets),
-        _ =>
-          _isLoading && tickets.isEmpty
-              ? const Center(child: CircularProgressIndicator())
-              : _loadError != null && tickets.isEmpty
-              ? _buildLoadError(colors)
-              : _buildHomeTab(total, open, inProgress, resolvedToday, tickets),
-      },
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: colors.primary,
-        unselectedItemColor: colors.onSurfaceVariant,
-        onTap: (index) {
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) {
           if (index == 4) {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
             );
           } else if (index == 2) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
-            );
+            _openUsers();
           } else {
             setState(() => _currentIndex = index);
           }
         },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_rounded),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
             label: 'Home',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.confirmation_number_outlined),
+            selectedIcon: Icon(Icons.confirmation_number_rounded),
             label: 'Tickets',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.people_outline_rounded),
+            selectedIcon: Icon(Icons.people_rounded),
             label: 'Users',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.bar_chart_rounded),
+            selectedIcon: Icon(Icons.bar_chart_rounded),
             label: 'Reports',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
+          NavigationDestination(
+            icon: Icon(Icons.tune_rounded),
+            selectedIcon: Icon(Icons.tune_rounded),
             label: 'Settings',
           ),
         ],
@@ -224,32 +285,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  Widget _buildLoadError(ColorScheme colors) {
+  Widget _buildLoadError() {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off_outlined, size: 42, color: colors.error),
-            const SizedBox(height: 12),
-            const Text(
-              'Could not load dashboard data',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              _loadError ?? 'Please check your connection and try again.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: colors.onSurfaceVariant),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _loadTickets,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Try again'),
-            ),
-          ],
+        child: TdEmptyState(
+          icon: Icons.cloud_off_outlined,
+          title: 'Could not load dashboard data',
+          message: _loadError ?? 'Please check your connection and try again.',
+          actionLabel: 'Try again',
+          onAction: _loadTickets,
         ),
       ),
     );
@@ -263,7 +308,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     List<Ticket> tickets,
   ) {
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
+
     final categoryCounts = <String, int>{};
     final priorityCounts = <String, int>{'High': 0, 'Medium': 0, 'Low': 0};
     final volume = List<int>.filled(7, 0);
@@ -296,272 +341,297 @@ class _AdminDashboardState extends State<AdminDashboard> {
       if (age >= 0 && age < volume.length) volume[volume.length - 1 - age]++;
     }
 
+    final newThisWeek = volume.fold<int>(0, (a, b) => a + b);
+    final openCritical = tickets
+        .where(
+          (t) => t.status == 'Open' && t.priority.toLowerCase() == 'critical',
+        )
+        .length;
+    final techs = tickets
+        .where(
+          (t) => t.status == 'In Progress' && t.assignedTechnicianId != null,
+        )
+        .map((t) => t.assignedTechnicianId)
+        .toSet()
+        .length;
+
+    final recent =
+        (tickets.toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt)))
+            .take(3)
+            .toList();
+
+    final categoryEntries = categoryCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final maxCategory = categoryEntries.isEmpty
+        ? 1
+        : categoryEntries.first.value;
+
     return RefreshIndicator(
-      color: colors.primary,
-      onRefresh: _loadTickets,
-      child: SingleChildScrollView(
+      color: theme.colorScheme.primary,
+      onRefresh: _refreshAll,
+      child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            buildUserHeader(context, roleTitle: 'Administrator', color: adminBlue),
-            const Text(
-              'Admin Dashboard',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              ApiService.currentUserEmail.isEmpty
-                  ? 'Signed in as ${ApiService.currentUserName}'
-                  : '${ApiService.currentUserName} · ${ApiService.currentUserEmail}',
-              style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
-            ),
-            const SizedBox(height: 18),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+        children: [
+          Text('Overview', style: theme.textTheme.headlineMedium),
+          const SizedBox(height: 2),
+          Text(
+            _pendingApprovals > 0
+                ? '$_pendingApprovals account${_pendingApprovals == 1 ? ' is' : 's are'} waiting for your approval.'
+                : 'Here\'s how support is doing.',
+            style: theme.textTheme.bodySmall?.copyWith(fontSize: 13.5),
+          ),
+          const SizedBox(height: 14),
 
-            Row(
-              children: [
-                Expanded(
-                  child: _adminStatCard(
-                    'Total Tickets',
-                    '$total',
-                    Icons.confirmation_number_outlined,
-                    colors.primary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _adminStatCard(
-                    'Open',
-                    '$open',
-                    Icons.inbox_outlined,
-                    adminRed,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _adminStatCard(
-                    'In Progress',
-                    '$inProgress',
-                    Icons.access_time_rounded,
-                    colors.secondary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _adminStatCard(
-                    'Resolved Today',
-                    '$resolvedToday',
-                    Icons.check_circle_outline_rounded,
-                    AppTheme.accentTeal,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Ticket Volume',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: theme.cardColor,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: colors.outlineVariant),
-                  ),
-                  child: const Row(
-                    children: [
-                      Text('Last 7 days', style: TextStyle(fontSize: 12)),
-                      SizedBox(width: 4),
-                      Icon(Icons.keyboard_arrow_down_rounded, size: 16),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              height: 190,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: theme.cardColor,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: colors.outlineVariant),
-              ),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _ChartPainter(
-                        primaryColor: colors.primary,
-                        values: volume,
-                        gridColor: colors.outlineVariant,
-                      ),
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: List.generate(7, (index) {
-                          final date = startOfToday.subtract(
-                            Duration(days: 6 - index),
-                          );
-                          return Text(
-                            '${date.month}/${date.day}',
-                            style: TextStyle(
-                              fontSize: 9,
-                              color: colors.onSurfaceVariant,
-                            ),
-                          );
-                        }),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: theme.cardColor,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: colors.outlineVariant),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Tickets by Category',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        for (final category in [
-                          'Network',
-                          'Hardware',
-                          'Software',
-                          'Access',
-                          'Other',
-                        ])
-                          _categoryBreakdownRow(
-                            category,
-                            '${categoryCounts[category] ?? 0}',
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: theme.cardColor,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: colors.outlineVariant),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Tickets by Priority',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _priorityDotRow(
-                          'High',
-                          '${priorityCounts['High']}',
-                          adminRed,
-                        ),
-                        const SizedBox(height: 12),
-                        _priorityDotRow(
-                          'Medium',
-                          '${priorityCounts['Medium']}',
-                          AppTheme.warningGold,
-                        ),
-                        const SizedBox(height: 12),
-                        _priorityDotRow(
-                          'Low',
-                          '${priorityCounts['Low']}',
-                          AppTheme.accentTeal,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 26),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Recent Tickets',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _currentIndex = 1),
-                  child: Text(
-                    'View all',
-                    style: TextStyle(
-                      color: colors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (tickets.isEmpty)
-              const Center(child: Text('No tickets available'))
-            else
-              ...tickets.take(2).map(_adminTicketCard),
+          if (_pendingApprovals > 0) ...[
+            _ApprovalBanner(count: _pendingApprovals, onTap: _openUsers),
+            const SizedBox(height: 14),
           ],
-        ),
+
+          Row(
+            children: [
+              Expanded(
+                child: _KpiCard(
+                  value: total,
+                  label: 'Total tickets',
+                  note: '+$newThisWeek this week',
+                  color: TdColors.teal,
+                  icon: Icons.confirmation_number_outlined,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _KpiCard(
+                  value: open,
+                  label: 'Open',
+                  note: '$openCritical critical',
+                  color: TdColors.coral,
+                  icon: Icons.schedule_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _KpiCard(
+                  value: inProgress,
+                  label: 'In progress',
+                  note: techs == 0
+                      ? 'unassigned'
+                      : 'with $techs tech${techs == 1 ? '' : 's'}',
+                  color: TdColors.blue,
+                  icon: Icons.build_outlined,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _KpiCard(
+                  value: resolvedToday,
+                  label: 'Resolved today',
+                  note: 'today',
+                  color: TdColors.green,
+                  icon: Icons.check_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+
+          // Ticket volume
+          _Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Ticket volume', style: theme.textTheme.titleMedium),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(
+                          color: theme.dividerColor,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Text(
+                        'Last 7 days',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  height: 120,
+                  child: CustomPaint(
+                    size: Size.infinite,
+                    painter: _VolumePainter(
+                      color: theme.colorScheme.secondary,
+                      gridColor: theme.dividerColor,
+                      values: volume,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    for (var i = 0; i < 7; i++)
+                      Text(
+                        _weekday(
+                          startOfToday.subtract(Duration(days: 6 - i)).weekday,
+                        ),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 10.5,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // By category
+          _Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('By category', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 14),
+                if (categoryEntries.isEmpty)
+                  Text('No tickets yet.', style: theme.textTheme.bodySmall)
+                else
+                  for (final e in categoryEntries.take(5))
+                    _BarRow(
+                      label: e.key,
+                      value: e.value,
+                      fraction: e.value / maxCategory,
+                      color: theme.colorScheme.secondary,
+                    ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // By priority
+          _Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('By priority', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 14),
+                _StackedBar(
+                  segments: [
+                    (priorityCounts['High'] ?? 0, TdColors.coral),
+                    (priorityCounts['Medium'] ?? 0, TdColors.amber),
+                    (priorityCounts['Low'] ?? 0, TdColors.teal),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _LegendRow(
+                  label: 'High',
+                  value: priorityCounts['High'] ?? 0,
+                  color: TdColors.coral,
+                ),
+                _LegendRow(
+                  label: 'Medium',
+                  value: priorityCounts['Medium'] ?? 0,
+                  color: TdColors.amber,
+                ),
+                _LegendRow(
+                  label: 'Low',
+                  value: priorityCounts['Low'] ?? 0,
+                  color: TdColors.teal,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+
+          TdSectionHeader(
+            title: 'Recent tickets',
+            actionLabel: 'View all',
+            onAction: () => setState(() => _currentIndex = 1),
+          ),
+          if (recent.isEmpty)
+            const TdEmptyState(
+              icon: Icons.inbox_outlined,
+              title: 'No tickets yet',
+              message: 'New tickets will appear here as they come in.',
+            )
+          else
+            for (final t in recent)
+              TdTicketCard(
+                ticket: t,
+                onTap: () =>
+                    _openTicketDetails(context, t, onReturn: _loadTickets),
+              ),
+        ],
       ),
     );
   }
 
-  Widget _adminStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    final theme = Theme.of(context);
+  String _weekday(int w) =>
+      const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][w - 1];
+}
 
+// ---------------------------------------------------------------------------
+// Small building blocks
+// ---------------------------------------------------------------------------
+class _Panel extends StatelessWidget {
+  final Widget child;
+  const _Panel({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _KpiCard extends StatelessWidget {
+  final int value;
+  final String label;
+  final String note;
+  final Color color;
+  final IconData icon;
+
+  const _KpiCard({
+    required this.value,
+    required this.label,
+    required this.note,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -569,164 +639,83 @@ class _AdminDashboardState extends State<AdminDashboard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Icon(icon, color: color, size: 22),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, size: 17, color: color),
+              ),
+              Flexible(
+                child: Text(
+                  note,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          Text('$value', style: TdFonts.monoStyle.copyWith(fontSize: 26)),
+          Text(label, style: theme.textTheme.bodySmall),
         ],
       ),
     );
   }
+}
 
-  Widget _categoryBreakdownRow(String label, String count) {
-    final icon = switch (label) {
-      'Network' => Icons.wifi_rounded,
-      'Hardware' => Icons.laptop_outlined,
-      'Software' => Icons.settings_outlined,
-      'Access' => Icons.person_outline_rounded,
-      _ => Icons.more_horiz_rounded,
-    };
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 15, color: AppTheme.accentTeal),
-              const SizedBox(width: 8),
-              Text(label, style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          Text(
-            count,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
+class _ApprovalBanner extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+  const _ApprovalBanner({required this.count, required this.onTap});
 
-  Widget _priorityDotRow(String label, String count, Color dotColor) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: dotColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(label, style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          Text(
-            count,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _adminTicketCard(Ticket ticket) {
-    final theme = Theme.of(context);
-    final categoryIcon = switch (ticket.category.toLowerCase()) {
-      'network' => Icons.wifi_rounded,
-      'hardware' => Icons.laptop_outlined,
-      'software' => Icons.settings_outlined,
-      'email' => Icons.email_outlined,
-      _ => Icons.confirmation_number_outlined,
-    };
-    final age = DateTime.now().difference(ticket.createdAt);
-    final ageLabel = age.inDays > 0
-        ? '${age.inDays}d ago'
-        : age.inHours > 0
-        ? '${age.inHours}h ago'
-        : '${age.inMinutes.clamp(1, 59)}m ago';
-    final priorityColor =
-        ticket.priority.toLowerCase() == 'critical' ||
-            ticket.priority.toLowerCase() == 'high'
-        ? adminRed
-        : ticket.priority.toLowerCase() == 'medium'
-        ? AppTheme.warningGold
-        : AppTheme.accentTeal;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: TdColors.openBg,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _openTicketDetails(ticket),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: AppTheme.accentTeal.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(categoryIcon, color: AppTheme.accentTeal, size: 20),
+              const Icon(
+                Icons.how_to_reg_outlined,
+                size: 20,
+                color: Color(0xFFB97A12),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      ticket.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${ticket.id}  ·  ${ticket.priority}',
-                      style: TextStyle(fontSize: 11, color: priorityColor),
-                    ),
-                  ],
+                child: Text(
+                  '$count new account${count == 1 ? '' : 's'} to review',
+                  style: const TextStyle(
+                    color: Color(0xFF6E4A0F),
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-              Text(
-                ageLabel,
+              const Text(
+                'Review',
                 style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: Color(0xFF9A6112),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(width: 6),
-              const Icon(Icons.chevron_right_rounded, size: 18),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: Color(0xFF9A6112),
+              ),
             ],
           ),
         ),
@@ -735,87 +724,209 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 }
 
-class _ChartPainter extends CustomPainter {
-  final Color primaryColor;
-  final List<int> values;
-  final Color gridColor;
+class _BarRow extends StatelessWidget {
+  final String label;
+  final int value;
+  final double fraction;
+  final Color color;
+  const _BarRow({
+    required this.label,
+    required this.value,
+    required this.fraction,
+    required this.color,
+  });
 
-  _ChartPainter({
-    required this.primaryColor,
-    required this.values,
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 74,
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(fontSize: 12.5),
+            ),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: fraction.clamp(0.0, 1.0),
+                minHeight: 8,
+                color: color,
+                backgroundColor: theme.dividerColor,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 30,
+            child: Text(
+              '$value',
+              textAlign: TextAlign.right,
+              style: TdFonts.monoStyle.copyWith(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StackedBar extends StatelessWidget {
+  final List<(int, Color)> segments;
+  const _StackedBar({required this.segments});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = segments.fold<int>(0, (a, s) => a + s.$1);
+    final theme = Theme.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        height: 12,
+        child: total == 0
+            ? Container(color: theme.dividerColor)
+            : Row(
+                children: [
+                  for (final s in segments)
+                    if (s.$1 > 0)
+                      Expanded(
+                        flex: s.$1,
+                        child: Container(color: s.$2),
+                      ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _LegendRow extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color color;
+  const _LegendRow({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(fontSize: 12.5),
+            ),
+          ),
+          Text('$value', style: TdFonts.monoStyle.copyWith(fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Volume chart
+// ---------------------------------------------------------------------------
+class _VolumePainter extends CustomPainter {
+  final Color color;
+  final Color gridColor;
+  final List<int> values;
+
+  _VolumePainter({
+    required this.color,
     required this.gridColor,
+    required this.values,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final chartHeight = size.height - 18;
+    final chartHeight = size.height;
     final gridPaint = Paint()
-      ..color = gridColor.withValues(alpha: 0.55)
+      ..color = gridColor.withValues(alpha: 0.7)
       ..strokeWidth = 1;
     for (var row = 0; row < 4; row++) {
-      final y = chartHeight * row / 3;
+      final y = (chartHeight - 4) * row / 3;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
 
-    final maximum = values.fold<int>(
-      0,
-      (current, value) => value > current ? value : current,
-    );
+    final maximum = values.fold<int>(0, (a, b) => b > a ? b : a);
     final scale = maximum == 0 ? 1 : maximum;
-    final paint = Paint()
-      ..color = primaryColor
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+    final usable = chartHeight - 12;
 
-    final dotPaint = Paint()..color = primaryColor;
-    final points = List.generate(values.length, (index) {
+    final points = List.generate(values.length, (i) {
       final x = values.length == 1
           ? size.width / 2
-          : size.width * index / (values.length - 1);
-      final y = chartHeight - (chartHeight * values[index] / scale);
+          : size.width * i / (values.length - 1);
+      final y = 6 + usable - (usable * values[i] / scale);
       return Offset(x, y);
     });
-    final path = Path();
-    path.moveTo(points[0].dx, points[0].dy);
-    for (int i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
+
+    final line = Path()..moveTo(points.first.dx, points.first.dy);
+    for (var i = 1; i < points.length; i++) {
+      line.lineTo(points[i].dx, points[i].dy);
     }
-    final fillPath = Path.from(path)
+    final fill = Path.from(line)
       ..lineTo(points.last.dx, chartHeight)
       ..lineTo(points.first.dx, chartHeight)
       ..close();
+
     canvas.drawPath(
-      fillPath,
+      fill,
       Paint()
         ..shader = LinearGradient(
-          colors: [
-            primaryColor.withValues(alpha: 0.24),
-            primaryColor.withValues(alpha: 0.01),
-          ],
+          colors: [color.withValues(alpha: 0.26), color.withValues(alpha: 0.0)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-        ).createShader(Offset.zero & size)
-        ..style = PaintingStyle.fill,
+        ).createShader(Offset.zero & size),
     );
-    canvas.drawPath(path, paint);
-    for (final p in points) {
-      canvas.drawCircle(p, 3.5, dotPaint);
-    }
+    canvas.drawPath(
+      line,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+
+    // Highlight today (last point)
+    canvas.drawCircle(points.last, 5, Paint()..color = Colors.white);
+    canvas.drawCircle(
+      points.last,
+      5,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant _ChartPainter oldDelegate) =>
-      oldDelegate.primaryColor != primaryColor ||
-      oldDelegate.gridColor != gridColor ||
-      oldDelegate.values != values;
+  bool shouldRepaint(covariant _VolumePainter old) =>
+      old.color != color || old.gridColor != gridColor || old.values != values;
 }
 
 // ============================================================
 // ALL TICKETS
 // ============================================================
-
-class AdminTicketsScreen extends StatelessWidget {
+class AdminTicketsScreen extends StatefulWidget {
   final List<Ticket> tickets;
   final Future<void> Function() onRefresh;
 
@@ -826,147 +937,246 @@ class AdminTicketsScreen extends StatelessWidget {
   });
 
   @override
+  State<AdminTicketsScreen> createState() => _AdminTicketsScreenState();
+}
+
+class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
+  final _search = TextEditingController();
+  String _filter = 'All';
+  static const _filters = [
+    'All',
+    'Open',
+    'In Progress',
+    'Pending',
+    'Resolved',
+    'Closed',
+  ];
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tickets = widget.tickets;
+    final query = _search.text.trim().toLowerCase();
+
+    final counts = <String, int>{
+      'All': tickets.length,
+      for (final f in _filters.skip(1))
+        f: tickets.where((t) => t.status == f).length,
+    };
+
+    final visible = tickets.where((t) {
+      final okFilter = _filter == 'All' || t.status == _filter;
+      final okQuery =
+          query.isEmpty ||
+          t.title.toLowerCase().contains(query) ||
+          t.category.toLowerCase().contains(query) ||
+          tdTicketLabel(t).toLowerCase().contains(query);
+      return okFilter && okQuery;
+    }).toList();
+
     return RefreshIndicator(
-      onRefresh: onRefresh,
+      onRefresh: widget.onRefresh,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
         children: [
-          buildUserHeader(context, roleTitle: 'Administrator', color: adminBlue),
-          const Text(
-            'All Tickets',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
+          Text('All tickets', style: theme.textTheme.headlineMedium),
+          const SizedBox(height: 2),
           Text(
-            '${tickets.length} tickets',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            '${tickets.length} in total',
+            style: theme.textTheme.bodySmall?.copyWith(fontSize: 13.5),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _search,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Search by title, ID or category',
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
+              suffixIcon: query.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 19),
+                      onPressed: () {
+                        _search.clear();
+                        setState(() {});
+                      },
+                    ),
             ),
           ),
+          const SizedBox(height: 12),
+          TdFilterChips(
+            options: _filters,
+            selected: _filter,
+            counts: counts,
+            onSelected: (v) => setState(() => _filter = v),
+          ),
           const SizedBox(height: 16),
-          if (tickets.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 48),
-              child: Center(child: Text('No tickets available')),
+          if (visible.isEmpty)
+            TdEmptyState(
+              icon: Icons.search_off_rounded,
+              title: tickets.isEmpty
+                  ? 'No tickets available'
+                  : 'No tickets found',
+              message: tickets.isEmpty
+                  ? 'New tickets will appear here.'
+                  : 'Try a different search or filter.',
             )
           else
-            ...tickets.map((ticket) => _TicketListTile(ticket: ticket)),
+            for (final t in visible)
+              TdTicketCard(
+                ticket: t,
+                onTap: () =>
+                    _openTicketDetails(context, t, onReturn: widget.onRefresh),
+              ),
         ],
       ),
     );
   }
 }
 
-class _TicketListTile extends StatelessWidget {
-  final Ticket ticket;
-
-  const _TicketListTile({required this.ticket});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Card(
-      child: ListTile(
-        leading: Icon(
-          Icons.confirmation_number_outlined,
-          color: colors.primary,
-        ),
-        title: Text(ticket.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text('${ticket.id} · ${ticket.category} · ${ticket.status}'),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TicketDetailsScreen(
-              id: ticket.id,
-              title: ticket.title,
-              description: ticket.description,
-              category: ticket.category,
-              impact: ticket.impact,
-              urgency: ticket.urgency,
-              device: ticket.device,
-              location: ticket.location,
-              status: ticket.status,
-              lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
+// ============================================================
+// REPORTS
+// ============================================================
 class AdminReportsScreen extends StatelessWidget {
   final List<Ticket> tickets;
 
   const AdminReportsScreen({super.key, required this.tickets});
 
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'Open':
+        return TdColors.amber;
+      case 'In Progress':
+        return TdColors.blue;
+      case 'Resolved':
+      case 'Closed':
+        return TdColors.green;
+      case 'Pending':
+        return TdColors.muted;
+      default:
+        return TdColors.teal;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     final statusCounts = <String, int>{};
     final categoryCounts = <String, int>{};
     for (final ticket in tickets) {
-      statusCounts.update(
-        ticket.status,
-        (count) => count + 1,
-        ifAbsent: () => 1,
-      );
-      categoryCounts.update(
-        ticket.category,
-        (count) => count + 1,
-        ifAbsent: () => 1,
-      );
+      statusCounts.update(ticket.status, (c) => c + 1, ifAbsent: () => 1);
+      categoryCounts.update(ticket.category, (c) => c + 1, ifAbsent: () => 1);
     }
-    final colors = Theme.of(context).colorScheme;
+
+    final total = tickets.length;
+    final resolved =
+        (statusCounts['Resolved'] ?? 0) + (statusCounts['Closed'] ?? 0);
+    final rate = total == 0 ? 0 : (resolved * 100 / total).round();
+    final activeNow = tickets.where(tdIsActive).length;
+
+    final statusEntries = statusCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final categoryEntries = categoryCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final maxCategory = categoryEntries.isEmpty
+        ? 1
+        : categoryEntries.first.value;
+
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
       children: [
-        buildUserHeader(context, roleTitle: 'Administrator', color: adminBlue),
-        const Text(
-          'Reports',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 4),
+        Text('Reports', style: theme.textTheme.headlineMedium),
+        const SizedBox(height: 2),
         Text(
           'Ticket overview and breakdown',
-          style: TextStyle(color: colors.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(fontSize: 13.5),
         ),
         const SizedBox(height: 16),
-        Card(
-          child: ListTile(
-            leading: Icon(
-              Icons.confirmation_number_outlined,
-              color: colors.primary,
+
+        // Summary
+        Row(
+          children: [
+            Expanded(
+              child: TdStatCard(
+                value: total,
+                label: 'Total tickets',
+                color: theme.colorScheme.onSurface,
+              ),
             ),
-            title: const Text('Total tickets'),
-            trailing: Text(
-              '${tickets.length}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TdStatCard(
+                value: activeNow,
+                label: 'Still active',
+                color: TdColors.openFg,
+              ),
             ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TdStatCard(
+                value: rate,
+                label: '% resolved',
+                color: TdColors.green,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+
+        _Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('By status', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 14),
+              if (statusEntries.isEmpty)
+                Text('No tickets yet.', style: theme.textTheme.bodySmall)
+              else ...[
+                _StackedBar(
+                  segments: [
+                    for (final e in statusEntries)
+                      (e.value, _statusColor(e.key)),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                for (final e in statusEntries)
+                  _LegendRow(
+                    label: e.key,
+                    value: e.value,
+                    color: _statusColor(e.key),
+                  ),
+              ],
+            ],
           ),
         ),
-        for (final entry in statusCounts.entries)
-          Card(
-            child: ListTile(
-              leading: Icon(Icons.circle, size: 12, color: colors.primary),
-              title: Text(entry.key),
-              trailing: Text('${entry.value}'),
-            ),
-          ),
         const SizedBox(height: 12),
-        const Text(
-          'By category',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        for (final entry in categoryCounts.entries)
-          Card(
-            child: ListTile(
-              title: Text(entry.key),
-              trailing: Text('${entry.value}'),
-            ),
+        _Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('By category', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 14),
+              if (categoryEntries.isEmpty)
+                Text('No tickets yet.', style: theme.textTheme.bodySmall)
+              else
+                for (final e in categoryEntries)
+                  _BarRow(
+                    label: e.key,
+                    value: e.value,
+                    fraction: e.value / maxCategory,
+                    color: theme.colorScheme.secondary,
+                  ),
+            ],
           ),
+        ),
       ],
     );
   }

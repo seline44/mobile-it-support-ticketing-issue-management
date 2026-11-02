@@ -333,11 +333,17 @@ def reset_password(
         .first()
     )
 
-    if (
-        user is None
-        or user.reset_token_expires_at is None
-        or user.reset_token_expires_at <= datetime.now(timezone.utc)
-    ):
+    if user is None or user.reset_token_expires_at is None:
+        raise HTTPException(
+            status_code=400,
+            detail="The reset link is invalid or has expired. Request a new one.",
+        )
+
+    expires_at = user.reset_token_expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at <= datetime.now(timezone.utc):
         raise HTTPException(
             status_code=400,
             detail="The reset link is invalid or has expired. Request a new one.",

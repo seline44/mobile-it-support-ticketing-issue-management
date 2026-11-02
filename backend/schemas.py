@@ -42,6 +42,7 @@ class TicketResponse(BaseModel):
 class StatusUpdate(BaseModel):
     status: str
     resolution: str | None = Field(default=None, max_length=10000)
+    note: str | None = Field(default=None, max_length=5000)
 
 class NoteCreate(BaseModel):
     note: str = Field(min_length=1, max_length=5000)
@@ -53,6 +54,7 @@ class NoteResponse(BaseModel):
     id: int
     ticket_id: int
     author_id: int
+    author_name: str | None = None
     note: str
     created_at: datetime
 

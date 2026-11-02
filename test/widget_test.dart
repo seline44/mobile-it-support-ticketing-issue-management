@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:triagedesk/main.dart';
 import 'package:triagedesk/screens/admin_dashboard.dart';
 import 'package:triagedesk/screens/technician_dashboard.dart';
+import 'package:triagedesk/screens/ticket_details_screen.dart';
 import 'package:triagedesk/screens/forgot_password_screen.dart';
 import 'package:triagedesk/screens/login_screen.dart';
 import 'package:triagedesk/screens/register_screen.dart';
@@ -17,10 +18,22 @@ import 'package:triagedesk/widgets/triagedesk_logo.dart';
 
 void main() {
   test('Plus Jakarta Sans is the font for both app themes', () {
-    expect(AppTheme.lightTheme.textTheme.bodyMedium?.fontFamily, 'PlusJakartaSans');
-    expect(AppTheme.darkTheme.textTheme.bodyMedium?.fontFamily, 'PlusJakartaSans');
-    expect(AppTheme.lightTheme.textTheme.titleLarge?.fontFamily, 'PlusJakartaSans');
-    expect(AppTheme.darkTheme.textTheme.titleLarge?.fontFamily, 'PlusJakartaSans');
+    expect(
+      AppTheme.lightTheme.textTheme.bodyMedium?.fontFamily,
+      'PlusJakartaSans',
+    );
+    expect(
+      AppTheme.darkTheme.textTheme.bodyMedium?.fontFamily,
+      'PlusJakartaSans',
+    );
+    expect(
+      AppTheme.lightTheme.textTheme.titleLarge?.fontFamily,
+      'PlusJakartaSans',
+    );
+    expect(
+      AppTheme.darkTheme.textTheme.titleLarge?.fontFamily,
+      'PlusJakartaSans',
+    );
   });
 
   test('Teal is the primary color across light and dark themes', () {
@@ -30,10 +43,23 @@ void main() {
 
   testWidgets('TriageDeskApp smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(const TriageDeskApp());
+    final logo = find.bySemanticsLabel('TriageDesk logo');
+    expect(logo, findsOneWidget);
+    expect(tester.getSize(logo), const Size(88, 88));
+    expect(
+      tester.getCenter(logo).dx,
+      closeTo(
+        tester.view.physicalSize.width / tester.view.devicePixelRatio / 2,
+        1,
+      ),
+    );
     expect(find.text('TriageDesk'), findsOneWidget);
     expect(find.text('Chat with us on WhatsApp'), findsOneWidget);
     expect(find.text('No account or sign-in needed'), findsOneWidget);
-    expect(find.text('IT help that feels like\nasking a colleague.'), findsOneWidget);
+    expect(
+      find.text('IT help that feels like\nasking a colleague.'),
+      findsOneWidget,
+    );
     expect(find.text('Get started'), findsOneWidget);
     expect(find.text("Tell us what's wrong"), findsOneWidget);
     expect(find.text('A technician picks it up'), findsOneWidget);
@@ -89,7 +115,10 @@ void main() {
           home: Theme(data: theme, child: const WelcomeScreen()),
         ),
       );
-      expect(find.text('IT help that feels like\nasking a colleague.'), findsOneWidget);
+      expect(
+        find.text('IT help that feels like\nasking a colleague.'),
+        findsOneWidget,
+      );
       expect(find.text('Chat with us on WhatsApp'), findsOneWidget);
       expect(find.text('No account or sign-in needed'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -241,6 +270,8 @@ void main() {
               'device': 'Laptop',
               'location': 'Office',
               'status': 'Open',
+              'assigned_technician_id': 9,
+              'assigned_technician_name': 'Jordan Technician',
               'created_at': DateTime.now().toIso8601String(),
             },
           ]),
@@ -303,27 +334,32 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Admin Dashboard'), findsOneWidget);
+      expect(find.text('Overview'), findsOneWidget);
       expect(find.text('Triage Admin'), findsWidgets);
-      expect(find.text('admin@example.org'), findsWidgets);
-      expect(find.text('Total Tickets'), findsOneWidget);
+      expect(find.text('Total tickets'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Wi-Fi not connecting'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Wi-Fi not connecting'), findsOneWidget);
 
       await tester.tap(find.text('Tickets').last);
       await tester.pumpAndSettle();
-      expect(find.text('All Tickets'), findsOneWidget);
+      expect(find.text('All tickets'), findsOneWidget);
       expect(find.textContaining('Network'), findsOneWidget);
 
       await tester.tap(find.text('Wi-Fi not connecting').last);
       await tester.pumpAndSettle();
       expect(find.text('Ticket Details'), findsOneWidget);
+      expect(find.text('Jordan Technician'), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Users'));
       await tester.pumpAndSettle();
-      expect(find.text('Users and Technicians'), findsOneWidget);
-      expect(find.text('User Management'), findsOneWidget);
+      expect(find.text('People'), findsOneWidget);
+      expect(find.text('User management'), findsOneWidget);
       expect(find.text('Pending (1)'), findsOneWidget);
       await tester.tap(find.text('Pending (1)'));
       await tester.pumpAndSettle();
@@ -405,7 +441,7 @@ void main() {
 
       await tester.tap(find.text('Users'));
       await tester.pumpAndSettle();
-      expect(find.text('User Management'), findsOneWidget);
+      expect(find.text('User management'), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
 
@@ -471,8 +507,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Good morning, Asha Njeri'), findsOneWidget);
-      expect(find.text('asha@example.org'), findsWidgets);
+      expect(find.textContaining('Asha'), findsWidgets);
       expect(find.text('Assigned to this technician'), findsWidgets);
       expect(find.text('John Doe updated ticket #TKT-0011'), findsNothing);
       expect(find.text('Sarah K. created ticket #TKT-0012'), findsNothing);
@@ -481,6 +516,231 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Asha Njeri'), findsWidgets);
       expect(find.textContaining('asha@example.org'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    }, () => client);
+  });
+
+  testWidgets('technician can accept an unassigned open ticket', (
+    WidgetTester tester,
+  ) async {
+    var acceptedTicket = false;
+    final client = MockClient((request) async {
+      if (request.url.path == '/auth/login') {
+        return http.Response(
+          jsonEncode({
+            'access_token': 'technician-token',
+            'user': {
+              'id': 4,
+              'full_name': 'Asha Njeri',
+              'email': 'asha@example.org',
+              'role': 'Technician',
+            },
+          }),
+          200,
+        );
+      }
+      if (request.url.path == '/tickets' && request.method == 'GET') {
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 52,
+              'ticket_number': 'TD-52',
+              'title': 'Unclaimed laptop issue',
+              'description': 'The laptop will not start.',
+              'category': 'Hardware',
+              'impact': 'Medium',
+              'urgency': 'High',
+              'priority': 'High',
+              'device': 'Laptop',
+              'location': 'Office',
+              'status': acceptedTicket ? 'In Progress' : 'Open',
+              'assigned_technician_id': acceptedTicket ? 4 : null,
+              'assigned_technician_name': acceptedTicket ? 'Asha Njeri' : null,
+              'created_at': DateTime.now().toIso8601String(),
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+          ]),
+          200,
+        );
+      }
+      if (request.url.path == '/tickets/52/accept' &&
+          request.method == 'POST') {
+        acceptedTicket = true;
+        return http.Response(
+          jsonEncode({
+            'id': 52,
+            'ticket_number': 'TD-52',
+            'title': 'Unclaimed laptop issue',
+            'description': 'The laptop will not start.',
+            'category': 'Hardware',
+            'impact': 'Medium',
+            'urgency': 'High',
+            'priority': 'High',
+            'device': 'Laptop',
+            'location': 'Office',
+            'status': 'In Progress',
+            'assigned_technician_id': 4,
+            'assigned_technician_name': 'Asha Njeri',
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          }),
+          200,
+        );
+      }
+      return http.Response('Not found', 404);
+    });
+
+    await http.runWithClient(() async {
+      await ApiService.login(email: 'asha@example.org', password: 'pass');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const TechnicianDashboard(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Available to claim'), findsOneWidget);
+      expect(find.text('Accept ticket'), findsOneWidget);
+      await tester.ensureVisible(find.text('Accept ticket'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Accept ticket'));
+      await tester.pumpAndSettle();
+
+      expect(acceptedTicket, isTrue);
+      expect(find.text('TD-52 accepted.'), findsOneWidget);
+      expect(find.text('Accept ticket'), findsNothing);
+      await tester.tap(find.text('Tickets').last);
+      await tester.pumpAndSettle();
+      expect(find.text('In Progress'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    }, () => client);
+  });
+
+  testWidgets('technician saves closure, resolution, and work note', (
+    WidgetTester tester,
+  ) async {
+    Map<String, dynamic>? submitted;
+    final client = MockClient((request) async {
+      if (request.url.path == '/auth/login') {
+        return http.Response(
+          jsonEncode({
+            'access_token': 'technician-token',
+            'user': {
+              'id': 4,
+              'full_name': 'Asha Njeri',
+              'email': 'asha@example.org',
+              'role': 'Technician',
+            },
+          }),
+          200,
+        );
+      }
+      if (request.url.path == '/tickets/53/history' &&
+          request.method == 'GET') {
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 1,
+              'ticket_id': 53,
+              'actor_id': 4,
+              'actor_name': 'Asha Njeri',
+              'action': 'Ticket closed',
+              'old_status': 'In Progress',
+              'new_status': 'Closed',
+              'details': 'Resolution: Replaced the power adapter.',
+              'created_at': DateTime.now().toIso8601String(),
+            },
+          ]),
+          200,
+        );
+      }
+      if (request.url.path == '/tickets/53/notes' && request.method == 'GET') {
+        return http.Response(
+          jsonEncode(
+            submitted == null
+                ? []
+                : [
+                    {
+                      'id': 1,
+                      'ticket_id': 53,
+                      'author_id': 4,
+                      'author_name': 'Asha Njeri',
+                      'note': submitted!['note'],
+                      'created_at': DateTime.now().toIso8601String(),
+                    },
+                  ],
+          ),
+          200,
+        );
+      }
+      if (request.url.path == '/tickets/53/status' &&
+          request.method == 'PATCH') {
+        submitted = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({
+            'id': 53,
+            'ticket_number': 'TD-53',
+            'status': 'Closed',
+            'resolution': submitted!['resolution'],
+            'resolved_at': DateTime.now().toIso8601String(),
+          }),
+          200,
+        );
+      }
+      return http.Response('Not found', 404);
+    });
+
+    await http.runWithClient(() async {
+      await ApiService.login(email: 'asha@example.org', password: 'pass');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const TicketDetailsScreen(
+            id: '53',
+            title: 'Laptop will not start',
+            description: 'The laptop will not start.',
+            category: 'Hardware',
+            impact: 'Medium',
+            urgency: 'High',
+            device: 'Laptop',
+            location: 'Office',
+            status: 'In Progress',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Resolve or close ticket'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Closed').last);
+      await tester.pumpAndSettle();
+      final completionFields = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(
+        completionFields.first,
+        'Replaced the power adapter.',
+      );
+      await tester.enterText(
+        completionFields.last,
+        'Reporter notified of the repair.',
+      );
+      await tester.tap(find.text('Save update'));
+      await tester.pumpAndSettle();
+
+      expect(submitted?['status'], 'Closed');
+      expect(submitted?['resolution'], 'Replaced the power adapter.');
+      expect(submitted?['note'], 'Reporter notified of the repair.');
+      expect(find.text('Closed'), findsOneWidget);
+      expect(find.text('Replaced the power adapter.'), findsWidgets);
+      expect(
+        find.textContaining('Reporter notified of the repair.'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     }, () => client);
   });

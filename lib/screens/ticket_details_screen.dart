@@ -13,6 +13,8 @@ class TicketDetailsScreen extends StatefulWidget {
   final String device;
   final String location;
   final String status;
+  final String? resolution;
+  final String? assignedTechnician;
   final DateTime? lastModifiedAt;
 
   const TicketDetailsScreen({
@@ -26,6 +28,8 @@ class TicketDetailsScreen extends StatefulWidget {
     required this.device,
     required this.location,
     required this.status,
+    this.resolution,
+    this.assignedTechnician,
     this.lastModifiedAt,
   });
 
@@ -33,15 +37,107 @@ class TicketDetailsScreen extends StatefulWidget {
   State<TicketDetailsScreen> createState() => _TicketDetailsScreenState();
 }
 
+class _CompleteTicketDialog extends StatefulWidget {
+  const _CompleteTicketDialog();
+
+  @override
+  State<_CompleteTicketDialog> createState() => _CompleteTicketDialogState();
+}
+
+class _CompleteTicketDialogState extends State<_CompleteTicketDialog> {
+  final _resolutionController = TextEditingController();
+  final _noteController = TextEditingController();
+  String _selectedStatus = 'Resolved';
+
+  @override
+  void dispose() {
+    _resolutionController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Complete ticket'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: _selectedStatus,
+              decoration: const InputDecoration(labelText: 'New status'),
+              items: const [
+                DropdownMenuItem(value: 'Resolved', child: Text('Resolved')),
+                DropdownMenuItem(value: 'Closed', child: Text('Closed')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _selectedStatus = value);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _resolutionController,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 10000,
+              decoration: const InputDecoration(
+                labelText: 'Resolution',
+                hintText: 'Describe how the issue was fixed',
+                alignLabelWithHint: true,
+              ),
+            ),
+            TextField(
+              controller: _noteController,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 5000,
+              decoration: const InputDecoration(
+                labelText: 'Work note (optional)',
+                hintText: 'Add an update for the reporter and admin',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final resolution = _resolutionController.text.trim();
+            if (resolution.isEmpty) return;
+            Navigator.pop(context, {
+              'status': _selectedStatus,
+              'resolution': resolution,
+              'note': _noteController.text.trim(),
+            });
+          },
+          child: const Text('Save update'),
+        ),
+      ],
+    );
+  }
+}
+
 class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
   final TextEditingController _commentController = TextEditingController();
   final List<Map<String, dynamic>> _updates = [];
   bool _isLoadingHistory = true;
   String? _historyError;
+  late String _status;
+  String? _resolution;
+  bool _isSavingStatus = false;
 
   @override
   void initState() {
     super.initState();
+    _status = widget.status;
+    _resolution = widget.resolution;
     _loadHistory();
   }
 
@@ -57,7 +153,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
   static const Color danger = Color(0xFFDC2626);
 
   Color _statusColor() {
-    switch (widget.status.toLowerCase()) {
+    switch (_status.toLowerCase()) {
       case 'resolved':
       case 'closed':
         return success;
@@ -128,26 +224,52 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     }
 
     try {
-      final history = await ApiService.getTicketHistory(ticketId);
+      final results = await Future.wait([
+        ApiService.getTicketHistory(ticketId),
+        ApiService.getTicketNotes(ticketId),
+      ]);
+      final history = results[0];
+      final notes = results[1];
       if (!mounted) return;
+      final updates = <Map<String, dynamic>>[];
+      for (final item in history.whereType<Map>()) {
+        final entry = Map<String, dynamic>.from(item);
+        final actor = entry['actor_name']?.toString();
+        final action = entry['action']?.toString() ?? 'Ticket updated';
+        final details = entry['details']?.toString();
+        final title = [
+          if (actor != null && actor.isNotEmpty) '$actor: ',
+          action,
+          if (details != null && details.isNotEmpty) ' - $details',
+        ].join();
+        updates.add({
+          'title': title,
+          'time': _formatHistoryTime(
+            DateTime.parse(entry['created_at'].toString()),
+          ),
+          'sortTime': DateTime.parse(entry['created_at'].toString()),
+        });
+      }
+      for (final item in notes.whereType<Map>()) {
+        final entry = Map<String, dynamic>.from(item);
+        final author = entry['author_name']?.toString();
+        final createdAt = DateTime.parse(entry['created_at'].toString());
+        updates.add({
+          'title':
+              '${author == null || author.isEmpty ? 'User' : author}: '
+              '${entry['note']}',
+          'time': _formatHistoryTime(createdAt),
+          'sortTime': createdAt,
+        });
+      }
+      updates.sort(
+        (a, b) =>
+            (a['sortTime'] as DateTime).compareTo(b['sortTime'] as DateTime),
+      );
       setState(() {
         _updates
           ..clear()
-          ..addAll(
-            history.whereType<Map>().map((item) {
-              final entry = Map<String, dynamic>.from(item);
-              final actor = entry['actor_name']?.toString();
-              final action = entry['action']?.toString() ?? 'Ticket updated';
-              final details = entry['details']?.toString();
-              final title = [
-                if (actor != null && actor.isNotEmpty) '$actor: ',
-                action,
-                if (details != null && details.isNotEmpty) ' - $details',
-              ].join();
-              final createdAt = DateTime.parse(entry['created_at'].toString());
-              return {'title': title, 'time': _formatHistoryTime(createdAt)};
-            }),
-          );
+          ..addAll(updates);
         _historyError = null;
         _isLoadingHistory = false;
       });
@@ -157,6 +279,50 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
         _historyError = error.toString().replaceFirst('Exception: ', '');
         _isLoadingHistory = false;
       });
+    }
+  }
+
+  Future<void> _changeStatus() async {
+    try {
+      final result = await showDialog<Map<String, String>>(
+        context: context,
+        builder: (_) => const _CompleteTicketDialog(),
+      );
+
+      if (result == null) return;
+      final ticketId = int.tryParse(widget.id);
+      if (ticketId == null) {
+        throw Exception('Could not identify this ticket.');
+      }
+
+      setState(() => _isSavingStatus = true);
+      final updated = await ApiService.updateTicketStatus(
+        ticketId: ticketId,
+        status: result['status']!,
+        resolution: result['resolution'],
+        note: result['note']!.isEmpty ? null : result['note'],
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = updated['status']?.toString() ?? result['status']!;
+        _resolution = updated['resolution']?.toString() ?? result['resolution'];
+      });
+      await _loadHistory();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Ticket $_status successfully.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted && _isSavingStatus) {
+        setState(() => _isSavingStatus = false);
+      }
     }
   }
 
@@ -219,6 +385,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     final statusColor = _statusColor();
     final priority = _calculatedPriority();
     final priorityColor = _priorityColor();
+    final isTechnician = ApiService.currentUser?['role'] == 'Technician';
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -227,13 +394,6 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
           'Ticket Details',
           style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
         ),
-        actions: [
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.more_vert_rounded),
-            tooltip: 'Options',
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -297,7 +457,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Text(
-                                    widget.status,
+                                    _status,
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
@@ -320,6 +480,26 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                       ),
                     ],
                   ),
+
+                  if (isTechnician && _status == 'In Progress') ...[
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _isSavingStatus ? null : _changeStatus,
+                        icon: _isSavingStatus
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.task_alt_rounded),
+                        label: const Text('Resolve or close ticket'),
+                      ),
+                    ),
+                  ],
 
                   const SizedBox(height: 24),
 
@@ -358,7 +538,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                         const Divider(height: 20),
                         _metaRow(
                           'Assigned to',
-                          'IT Support Team',
+                          widget.assignedTechnician ?? 'Unassigned',
                           textPrimary,
                           textSecondary,
                         ),
@@ -367,6 +547,28 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                   ),
 
                   const SizedBox(height: 28),
+                  if (_resolution != null && _resolution!.isNotEmpty) ...[
+                    Text(
+                      'Resolution',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Text(_resolution!),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
 
                   // Updates Timeline Section
                   Text(

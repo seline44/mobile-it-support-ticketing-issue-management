@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'screens/login_screen.dart';
 import 'services/theme_service.dart';
 import 'theme/app_theme.dart';
+import 'widgets/triagedesk_logo.dart';
 import 'widgets/viewport_wrapper.dart';
 
 // ---------------------------------------------------------------------------
@@ -132,8 +133,8 @@ class WelcomeScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const _BrandRow(),
-                            const SizedBox(height: 32),
+                            const Center(child: _BrandRow()),
+                            const SizedBox(height: 28),
                             const Text(
                               'IT help that feels like\nasking a colleague.',
                               style: TextStyle(
@@ -221,36 +222,27 @@ class WelcomeScreen extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Brand row: logo mark + name
+// Centered brand mark and name
 // ---------------------------------------------------------------------------
 class _BrandRow extends StatelessWidget {
   const _BrandRow();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(11),
-          ),
-          child: const Padding(
-            padding: EdgeInsets.all(8),
-            child: CustomPaint(painter: _MarkPainter()),
-          ),
-        ),
-        const SizedBox(width: 12),
+        const TriageDeskLogo(size: 88),
+        const SizedBox(height: 10),
         const Text(
           'TriageDesk',
           style: TextStyle(
             fontFamily: _sans,
             color: Colors.white,
-            fontSize: 18,
+            fontSize: 20,
             fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
+            letterSpacing: -0.4,
           ),
         ),
       ],
@@ -462,37 +454,6 @@ class _WhatsAppCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Painters
 // ---------------------------------------------------------------------------
-
-/// Logo mark: a small heartbeat trace.
-class _MarkPainter extends CustomPainter {
-  const _MarkPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final sx = size.width / 24;
-    final sy = size.height / 24;
-    final path = Path()
-      ..moveTo(2 * sx, 12 * sy)
-      ..lineTo(7 * sx, 12 * sy)
-      ..lineTo(9.5 * sx, 6 * sy)
-      ..lineTo(13.5 * sx, 18 * sy)
-      ..lineTo(16 * sx, 12 * sy)
-      ..lineTo(22 * sx, 12 * sy);
-
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.4 * sx
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
 
 /// Wide decorative pulse line behind the content.
 class _PulsePainter extends CustomPainter {

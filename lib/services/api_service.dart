@@ -139,6 +139,16 @@ class ApiService {
     throw Exception(_error(decoded, 'Could not load ticket activity'));
   }
 
+  static Future<List<dynamic>> getTicketNotes(int ticketId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/tickets/$ticketId/notes'),
+      headers: _headers,
+    );
+    final decoded = _decode(response);
+    if (response.statusCode == 200 && decoded is List) return decoded;
+    throw Exception(_error(decoded, 'Could not load ticket notes'));
+  }
+
   static Future<Map<String, dynamic>> createTicket({
     required String title,
     required String description,
@@ -187,9 +197,11 @@ class ApiService {
     required int ticketId,
     required String status,
     String? resolution,
+    String? note,
   }) async {
     final body = <String, dynamic>{'status': status};
     if (resolution != null) body['resolution'] = resolution;
+    if (note != null) body['note'] = note;
 
     final response = await http.patch(
       Uri.parse('$baseUrl/tickets/$ticketId/status'),

@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
-import '../theme/app_theme.dart';
-import '../widgets/user_header.dart';
-
-const Color _adminBlue = AppTheme.accentTeal;
-const Color _adminGreen = AppTheme.accentTeal;
-const Color _adminAmber = AppTheme.warningGold;
-const Color _adminRed = Color(0xFFDC2626);
+import '../theme/td_theme.dart';
+import '../widgets/td_ticket_widgets.dart';
+import '../widgets/td_widgets.dart';
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
@@ -80,12 +76,14 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       }
     }
     result.sort((a, b) {
-      final nameA = (a['full_name'] ?? a['email'] ?? '')
-          .toString()
-          .toLowerCase();
-      final nameB = (b['full_name'] ?? b['email'] ?? '')
-          .toString()
-          .toLowerCase();
+      final pendingA = _approvalStatus(a) == 'Pending' ? 0 : 1;
+      final pendingB = _approvalStatus(b) == 'Pending' ? 0 : 1;
+      if (pendingA != pendingB) return pendingA.compareTo(pendingB);
+
+      final nameA =
+          (a['full_name'] ?? a['email'] ?? '').toString().toLowerCase();
+      final nameB =
+          (b['full_name'] ?? b['email'] ?? '').toString().toLowerCase();
       return nameA.compareTo(nameB);
     });
     return result;
@@ -175,16 +173,27 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Color _statusColor(String status) {
+  (Color, Color) _statusColors(String status) {
     switch (status.toLowerCase()) {
       case 'approved':
-        return _adminGreen;
-      case 'pending':
-        return _adminAmber;
+        return (TdColors.resolvedBg, TdColors.resolvedFg);
       case 'rejected':
-        return _adminRed;
+        return (TdColors.criticalBg, TdColors.criticalFg);
+      case 'pending':
+        return (TdColors.openBg, TdColors.openFg);
       default:
-        return Theme.of(context).colorScheme.onSurfaceVariant;
+        return (TdColors.openBg, TdColors.openFg);
+    }
+  }
+
+  (Color, Color) _roleColors(String role) {
+    switch (role.toLowerCase()) {
+      case 'technician':
+        return (TdColors.progressBg, TdColors.progressFg);
+      case 'administrator':
+        return (TdColors.openBg, TdColors.openFg);
+      default:
+        return (TdColors.mint, TdColors.deepTeal);
     }
   }
 
@@ -192,112 +201,78 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final visibleUsers = _filteredUsers;
-    final secondaryColor = theme.colorScheme.onSurfaceVariant;
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: AppTheme.charcoal,
-        foregroundColor: Colors.white,
-        title: const Text('Users and Technicians'),
+        title: const Text('People'),
+        leading: const Padding(
+          padding: EdgeInsets.only(left: 12),
+          child: Center(child: TdBackButton()),
+        ),
+        leadingWidth: 60,
         actions: [
           IconButton(
             tooltip: 'Refresh users',
             onPressed: _isLoading ? null : _loadUsers,
             icon: const Icon(Icons.refresh_rounded),
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _loadUsers,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
           children: [
-            buildUserHeader(context, roleTitle: 'Administrator', color: _adminBlue),
-            const Text(
-              'User Management',
-              style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
+            Text('User management', style: theme.textTheme.headlineMedium),
+            const SizedBox(height: 4),
             Text(
               'View registered accounts and manage registration approvals.',
-              style: TextStyle(color: secondaryColor, height: 1.5),
+              style: theme.textTheme.bodySmall?.copyWith(fontSize: 13.5, height: 1.45),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             if (!_isLoading && _errorMessage == null) ...[
               Row(
                 children: [
                   Expanded(
-                    child: _summaryCard(
-                      'Total Users',
-                      _countFor('All'),
-                      _adminBlue,
-                      Icons.people_outline_rounded,
+                    child: _CountTile(
+                      count: _countFor('All'),
+                      label: 'Total',
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
-                    child: _summaryCard(
-                      'Pending',
-                      _countFor('Pending'),
-                      _adminAmber,
-                      Icons.pending_actions_rounded,
+                    child: _CountTile(
+                      count: _countFor('Pending'),
+                      label: 'Pending',
+                      highlight: _countFor('Pending') > 0,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _CountTile(
+                      count: _countFor('Approved'),
+                      label: 'Approved',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _CountTile(
+                      count: _countFor('Rejected'),
+                      label: 'Rejected',
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _summaryCard(
-                      'Approved',
-                      _countFor('Approved'),
-                      _adminGreen,
-                      Icons.verified_user_outlined,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _summaryCard(
-                      'Rejected',
-                      _countFor('Rejected'),
-                      _adminRed,
-                      Icons.person_off_outlined,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 16),
+              TdFilterChips(
+                options: _filters,
+                selected: _selectedFilter,
+                counts: {for (final f in _filters) f: _countFor(f)},
+                onSelected: (v) => setState(() => _selectedFilter = v),
               ),
-              const SizedBox(height: 24),
-              const Text(
-                'Filter accounts',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final filter in _filters)
-                    ChoiceChip(
-                      label: Text('$filter (${_countFor(filter)})'),
-                      selected: _selectedFilter == filter,
-                      onSelected: (_) =>
-                          setState(() => _selectedFilter = filter),
-                      selectedColor: theme.colorScheme.primary.withValues(
-                        alpha: 0.15,
-                      ),
-                      labelStyle: TextStyle(
-                        color: _selectedFilter == filter
-                            ? theme.colorScheme.primary
-                            : null,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
             ],
             if (_isLoading)
               const Padding(
@@ -305,17 +280,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (_errorMessage != null)
-              _messageCard(
+              TdEmptyState(
                 icon: Icons.error_outline_rounded,
                 title: _errorMessage!,
                 message: 'Please refresh the account list and try again.',
-                action: FilledButton(
-                  onPressed: _loadUsers,
-                  child: const Text('Try again'),
-                ),
+                actionLabel: 'Try again',
+                onAction: _loadUsers,
               )
             else if (visibleUsers.isEmpty)
-              _messageCard(
+              TdEmptyState(
                 icon: _selectedFilter == 'Pending'
                     ? Icons.verified_user_outlined
                     : Icons.people_outline_rounded,
@@ -325,14 +298,14 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 message: 'Try another filter or refresh the list.',
               )
             else ...[
-              Text(
-                '${visibleUsers.length} ${visibleUsers.length == 1 ? 'account' : 'accounts'}',
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10, left: 2),
+                child: Text(
+                  '${visibleUsers.length} ${visibleUsers.length == 1 ? 'account' : 'accounts'}',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
-              const SizedBox(height: 12),
               for (final user in visibleUsers) _buildUserCard(user),
             ],
           ],
@@ -341,78 +314,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 
-  Widget _summaryCard(String title, int count, Color color, IconData icon) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 12),
-          Text(
-            '$count',
-            style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: TextStyle(
-              color: theme.colorScheme.onSurfaceVariant,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _messageCard({
-    required IconData icon,
-    required String title,
-    required String message,
-    Widget? action,
-  }) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-        child: Column(
-          children: [
-            Icon(icon, size: 48, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            if (action != null) ...[const SizedBox(height: 14), action],
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildUserCard(Map<String, dynamic> user) {
-    final secondaryColor = Theme.of(context).colorScheme.onSurfaceVariant;
-    final name =
-        (user['full_name'] ??
-                user['name'] ??
-                user['username'] ??
-                'Unnamed user')
-            .toString();
+    final theme = Theme.of(context);
+    final secondaryColor = theme.colorScheme.onSurfaceVariant;
+
+    final name = (user['full_name'] ??
+            user['name'] ??
+            user['username'] ??
+            'Unnamed user')
+        .toString();
     final email = (user['email'] ?? 'No email provided').toString();
     final role = (user['role'] ?? 'Reporter').toString();
     final status = _approvalStatus(user);
@@ -422,133 +332,189 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final canLinkWhatsApp =
         role.toLowerCase() == 'reporter' && status.toLowerCase() == 'approved';
     final linkedWhatsAppNumber = user['whatsapp_phone_number']?.toString();
-    final roleColor = switch (role.toLowerCase()) {
-      'technician' => _adminGreen,
-      'administrator' => AppTheme.charcoal,
-      _ => _adminBlue,
-    };
+    final hasLinked =
+        linkedWhatsAppNumber != null && linkedWhatsAppNumber.isNotEmpty;
+    final (statusBg, statusFg) = _statusColors(status);
+    final (roleBg, roleFg) = _roleColors(role);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isPending
+              ? TdColors.amber.withValues(alpha: 0.45)
+              : theme.dividerColor,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TdAvatar(initials: _initials(name), size: 44),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 2),
+                    Text(
+                      email,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: secondaryColor, fontSize: 12.5),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              TdPill(label: status, background: statusBg, foreground: statusFg),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TdPill(
+            label: role,
+            background: roleBg,
+            foreground: roleFg,
+            showDot: false,
+          ),
+          if (isPending) ...[
+            const SizedBox(height: 16),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 23,
-                  backgroundColor: roleColor.withValues(alpha: 0.12),
-                  child: Icon(
-                    role.toLowerCase() == 'technician'
-                        ? Icons.support_agent_rounded
-                        : role.toLowerCase() == 'administrator'
-                        ? Icons.admin_panel_settings_outlined
-                        : Icons.person_outline_rounded,
-                    color: roleColor,
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: isUpdating || userId == null
+                        ? null
+                        : () => _updateApproval(user, 'Rejected'),
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    label: const Text('Decline'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 44),
+                      foregroundColor: TdColors.coral,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        email,
-                        style: TextStyle(color: secondaryColor, fontSize: 13),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _UserPill(label: role, color: roleColor),
-                          _UserPill(label: status, color: _statusColor(status)),
-                        ],
-                      ),
-                    ],
+                  child: FilledButton.icon(
+                    onPressed: isUpdating || userId == null
+                        ? null
+                        : () => _updateApproval(user, 'Approved'),
+                    icon: isUpdating
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.check_rounded, size: 18),
+                    label: Text(isUpdating ? 'Updating...' : 'Approve'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 44),
+                    ),
                   ),
                 ),
               ],
             ),
-            if (isPending) ...[
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: isUpdating || userId == null
-                          ? null
-                          : () => _updateApproval(user, 'Rejected'),
-                      icon: const Icon(Icons.close_rounded),
-                      label: const Text('Reject'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _adminRed,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: isUpdating || userId == null
-                          ? null
-                          : () => _updateApproval(user, 'Approved'),
-                      icon: isUpdating
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.check_rounded),
-                      label: Text(isUpdating ? 'Updating...' : 'Approve'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _adminGreen,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            if (canLinkWhatsApp) ...[
-              const SizedBox(height: 12),
-              if (linkedWhatsAppNumber != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+          ],
+          if (canLinkWhatsApp) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Icon(Icons.chat_outlined,
+                    size: 16, color: hasLinked ? TdColors.green : secondaryColor),
+                const SizedBox(width: 8),
+                Expanded(
                   child: Text(
-                    'WhatsApp linked: $linkedWhatsAppNumber',
-                    style: TextStyle(color: secondaryColor, fontSize: 13),
+                    hasLinked
+                        ? 'WhatsApp linked: $linkedWhatsAppNumber'
+                        : 'No WhatsApp number linked',
+                    style: TextStyle(color: secondaryColor, fontSize: 12.5),
                   ),
                 ),
-              OutlinedButton.icon(
-                onPressed: isUpdating || userId == null
-                    ? null
-                    : () => _linkWhatsAppNumber(user),
-                icon: isUpdating
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.chat_outlined),
-                label: Text(isUpdating ? 'Linking...' : 'Link WhatsApp'),
-              ),
-            ],
+                TextButton(
+                  onPressed: isUpdating || userId == null
+                      ? null
+                      : () => _linkWhatsAppNumber(user),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 34),
+                  ),
+                  child: isUpdating
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(hasLinked ? 'Change' : 'Link WhatsApp',
+                          style: const TextStyle(fontSize: 13)),
+                ),
+              ],
+            ),
           ],
+        ],
+      ),
+    );
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return 'TD';
+    if (parts.length == 1) return parts.first.substring(0, parts.first.length >= 2 ? 2 : 1).toUpperCase();
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
+}
+
+class _CountTile extends StatelessWidget {
+  final int count;
+  final String label;
+  final bool highlight;
+  const _CountTile({
+    required this.count,
+    required this.label,
+    this.highlight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: highlight ? TdColors.openBg : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: highlight
+              ? TdColors.amber.withValues(alpha: 0.5)
+              : theme.dividerColor,
         ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$count',
+            style: TdFonts.monoStyle.copyWith(
+              fontSize: 20,
+              color: highlight ? TdColors.openFg : theme.colorScheme.onSurface,
+            ),
+          ),
+          Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: highlight ? TdColors.openFg : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -592,6 +558,7 @@ class _WhatsAppNumberDialogState extends State<_WhatsAppNumberDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
           onPressed: () {
             final phone = _controller.text.trim();
             if (!RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(phone)) {
@@ -605,32 +572,6 @@ class _WhatsAppNumberDialogState extends State<_WhatsAppNumberDialog> {
           child: const Text('Link number'),
         ),
       ],
-    );
-  }
-}
-
-class _UserPill extends StatelessWidget {
-  final String label;
-  final Color color;
-
-  const _UserPill({required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
     );
   }
 }

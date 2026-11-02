@@ -1,5 +1,12 @@
 # triagedesk
 
+## Backend database migration
+
+After deploying the password-reset token model change to an existing database,
+run `python backend/migrate_reset_tokens.py` from the repository root with the
+backend environment variables configured. New databases receive these columns
+when initialized.
+
 A new Flutter project.
 
 ## Getting Started
