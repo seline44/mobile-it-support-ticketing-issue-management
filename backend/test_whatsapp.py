@@ -1,10 +1,12 @@
 import asyncio
 import hashlib
 import hmac
+import io
 import json
 import os
 import unittest
 from urllib.parse import urlencode
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 from fastapi import HTTPException, Request
@@ -21,6 +23,7 @@ from models import (
     WhatsAppConversation,
     WhatsAppMessage,
 )
+from meta_whatsapp import send_meta_whatsapp_message
 from whatsapp import (
     process_incoming_message,
     receive_meta_webhook,
@@ -247,6 +250,36 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         with patch.dict(os.environ, {"META_APP_SECRET": app_secret}):
             self.assertTrue(verify_meta_webhook_signature(body, signature))
             self.assertFalse(verify_meta_webhook_signature(body, "sha256=invalid"))
+
+    def test_meta_api_error_includes_safe_provider_details(self):
+        error_body = json.dumps(
+            {
+                "error": {
+                    "message": "Recipient phone number is not allowed",
+                    "type": "OAuthException",
+                    "code": 131030,
+                }
+            }
+        ).encode("utf-8")
+        http_error = HTTPError(
+            "https://graph.facebook.com/v23.0/123/messages",
+            400,
+            "Bad Request",
+            {},
+            io.BytesIO(error_body),
+        )
+
+        with (
+            patch.dict(os.environ, {"META_ACCESS_TOKEN": "private-token"}),
+            patch("meta_whatsapp.urlopen", side_effect=http_error),
+            self.assertRaises(RuntimeError) as raised,
+        ):
+            send_meta_whatsapp_message("123", "15550000000", "Hello")
+
+        self.assertIn("HTTP 400", str(raised.exception))
+        self.assertIn("Meta error 131030", str(raised.exception))
+        self.assertIn("Recipient phone number is not allowed", str(raised.exception))
+        self.assertNotIn("private-token", str(raised.exception))
 
     def test_meta_webhook_verification_returns_challenge(self):
         scope = {

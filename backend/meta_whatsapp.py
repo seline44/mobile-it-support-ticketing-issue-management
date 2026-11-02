@@ -42,5 +42,21 @@ def send_meta_whatsapp_message(
                 raise RuntimeError(
                     f"Meta WhatsApp API returned HTTP {response.status}."
                 )
-    except (HTTPError, URLError) as error:
+    except HTTPError as error:
+        try:
+            response_body = json.loads(error.read())
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            response_body = {}
+        meta_error = response_body.get("error", {})
+        message = meta_error.get("message")
+        code = meta_error.get("code")
+        details = f"HTTP {error.code}"
+        if code is not None:
+            details += f", Meta error {code}"
+        if isinstance(message, str) and message:
+            details += f": {message[:500]}"
+        raise RuntimeError(
+            f"Meta WhatsApp API request failed ({details})."
+        ) from error
+    except URLError as error:
         raise RuntimeError("Meta WhatsApp API request failed.") from error
