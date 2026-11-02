@@ -24,6 +24,7 @@ from whatsapp import (
     verify_webhook_signature,
     whatsapp_twiml_response,
 )
+from whatsapp_notifications import send_reporter_whatsapp_update
 
 
 class WhatsAppIntegrationTests(unittest.TestCase):
@@ -108,6 +109,47 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         self.assertEqual(first_response, duplicate_response)
         self.assertEqual(self.db.query(WhatsAppMessage).count(), 4)
         self.assertEqual(self.db.query(Ticket).count(), 1)
+
+    def test_sends_whatsapp_update_to_linked_reporter(self):
+        ticket = Ticket(
+            ticket_number="TD-WA-UPDATE",
+            title="Wi-Fi is unavailable",
+            description="Cannot connect to Wi-Fi.",
+            category="Network",
+            impact="High",
+            urgency="High",
+            priority="Critical",
+            status="In Progress",
+            reporter_id=self.reporter.id,
+            assigned_technician_id=2,
+        )
+        self.db.add(ticket)
+        self.db.commit()
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "TWILIO_ACCOUNT_SID": "AC123",
+                    "TWILIO_AUTH_TOKEN": "test-auth-token",
+                    "TWILIO_WHATSAPP_FROM": "whatsapp:+14155238886",
+                },
+            ),
+            patch("whatsapp_notifications.Client") as twilio_client,
+        ):
+            sent = send_reporter_whatsapp_update(
+                self.db,
+                ticket,
+                "The technician resolved TD-WA-UPDATE.",
+            )
+
+        self.assertTrue(sent)
+        twilio_client.assert_called_once_with("AC123", "test-auth-token")
+        twilio_client.return_value.messages.create.assert_called_once_with(
+            body="The technician resolved TD-WA-UPDATE.",
+            from_="whatsapp:+14155238886",
+            to="whatsapp:+15551234567",
+        )
 
     def test_acknowledgement_after_ticket_does_not_start_another_conversation(self):
         self.send("wamid.1", "My WiFi is not working.")

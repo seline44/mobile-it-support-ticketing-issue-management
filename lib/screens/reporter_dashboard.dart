@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/ticket.dart';
 import '../services/api_service.dart';
+import '../services/whatsapp_contact.dart';
 import '../theme/app_theme.dart';
 import '../theme/td_theme.dart';
 import '../widgets/triagedesk_logo.dart';
 import '../widgets/td_widgets.dart';
 import '../widgets/user_header.dart';
+import '../widgets/whatsapp_support_panel.dart';
 import 'create_ticket_screen.dart';
 import 'ticket_details_screen.dart';
 import 'login_screen.dart';
@@ -25,6 +30,12 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
   List<Ticket> _tickets = [];
   bool _isLoadingTickets = true;
   String? _ticketError;
+  List<Map<String, dynamic>> _notifications = [];
+  final Set<int> _unreadNotificationIds = {};
+  Timer? _notificationTimer;
+  bool _notificationsInitialized = false;
+  String? _notificationError;
+  Future<void>? _notificationLoad;
   final TextEditingController _searchController = TextEditingController();
 
   static const Color success = AppTheme.accentTeal;
@@ -34,12 +45,92 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
   void initState() {
     super.initState();
     _refreshTickets();
+    _loadNotifications();
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _loadNotifications(detectNew: true),
+    );
   }
 
   @override
   void dispose() {
+    _notificationTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadNotifications({bool detectNew = false}) async {
+    final pendingLoad = _notificationLoad;
+    if (pendingLoad != null) {
+      await pendingLoad;
+      return;
+    }
+
+    final load = _fetchNotifications(detectNew: detectNew);
+    _notificationLoad = load;
+    try {
+      await load;
+    } finally {
+      if (identical(_notificationLoad, load)) _notificationLoad = null;
+    }
+  }
+
+  Future<void> _fetchNotifications({required bool detectNew}) async {
+    try {
+      final response = await ApiService.getTicketNotifications();
+      final notifications = response
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final previousIds = _notifications
+          .map((notification) => int.tryParse(notification['id'].toString()))
+          .whereType<int>()
+          .toSet();
+      final newNotifications = _notificationsInitialized && detectNew
+          ? notifications.where((notification) {
+              final id = int.tryParse(notification['id'].toString());
+              return id != null && !previousIds.contains(id);
+            }).toList()
+          : <Map<String, dynamic>>[];
+
+      if (!mounted) return;
+      setState(() {
+        _notifications = notifications;
+        _notificationError = null;
+        for (final notification in newNotifications) {
+          final id = int.tryParse(notification['id'].toString());
+          if (id != null) _unreadNotificationIds.add(id);
+        }
+        _notificationsInitialized = true;
+      });
+
+      if (newNotifications.isNotEmpty) {
+        final latest = newNotifications.first;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${latest['ticket_number']}: ${latest['action']}'),
+          ),
+        );
+        await _refreshTickets();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () => _notificationError = error.toString().replaceFirst(
+          'Exception: ',
+          '',
+        ),
+      );
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await _loadNotifications();
+    if (!mounted) return;
+    setState(() {
+      _unreadNotificationIds.clear();
+      _currentIndex = 3;
+    });
   }
 
   Future<void> _refreshTickets() async {
@@ -99,6 +190,25 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
       ),
     );
     if (mounted) _refreshTickets();
+  }
+
+  Future<void> _openWhatsApp() async {
+    final uri = Uri.https('wa.me', '/$whatsappSupportNumber', {
+      'text': whatsappSupportMessage,
+    });
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open WhatsApp.')),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open WhatsApp: $error')),
+      );
+    }
   }
 
   void _confirmSignOut() {
@@ -171,24 +281,25 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
                 ),
                 const Spacer(),
                 IconButton(
-                  tooltip: 'Help & Support',
-                  onPressed: () => setState(() => _currentIndex = 3),
+                  tooltip: 'Notifications',
+                  onPressed: _openNotifications,
                   icon: Stack(
                     clipBehavior: Clip.none,
                     children: [
                       const Icon(Icons.notifications_none_rounded, size: 23),
-                      Positioned(
-                        right: -1,
-                        top: -1,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFEF5B64),
-                            shape: BoxShape.circle,
+                      if (_unreadNotificationIds.isNotEmpty)
+                        Positioned(
+                          right: -1,
+                          top: -1,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEF5B64),
+                              shape: BoxShape.circle,
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -625,68 +736,10 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
     );
   }
 
-  List<Map<String, dynamic>> get _dynamicNotifications {
-    final tickets = _tickets;
-    final List<Map<String, dynamic>> list = [];
-
-    for (var ticket in tickets) {
-      if (ticket.status == 'Resolved' || ticket.status == 'Closed') {
-        list.add({
-          'title': 'Ticket ${ticket.status} (${ticket.id})',
-          'subtitle': ticket.resolution != null && ticket.resolution!.isNotEmpty
-              ? 'Resolution: ${ticket.resolution}'
-              : 'Your ticket "${ticket.title}" has been resolved.',
-          'time': _formattedTicketDate(
-            ticket.lastModifiedAt ?? ticket.updatedAt ?? ticket.createdAt,
-          ),
-          'icon': Icons.check_circle_outline_rounded,
-          'color': success,
-          'ticket': ticket,
-        });
-      } else if (ticket.technicianNotes != null &&
-          ticket.technicianNotes!.isNotEmpty) {
-        list.add({
-          'title': 'Technician Note Added (${ticket.id})',
-          'subtitle': 'Note: ${ticket.technicianNotes}',
-          'time': _formattedTicketDate(
-            ticket.lastModifiedAt ?? ticket.updatedAt ?? ticket.createdAt,
-          ),
-          'icon': Icons.note_alt_outlined,
-          'color': Theme.of(context).colorScheme.primary,
-          'ticket': ticket,
-        });
-      } else if (ticket.status == 'In Progress') {
-        list.add({
-          'title': 'Ticket In Progress (${ticket.id})',
-          'subtitle':
-              'Your ticket "${ticket.title}" is being handled by ${ticket.assignedTechnician ?? 'IT Support'}.',
-          'time': _formattedTicketDate(
-            ticket.lastModifiedAt ?? ticket.updatedAt ?? ticket.createdAt,
-          ),
-          'icon': Icons.sync_outlined,
-          'color': Theme.of(context).colorScheme.secondary,
-          'ticket': ticket,
-        });
-      } else {
-        list.add({
-          'title': 'Ticket Created (${ticket.id})',
-          'subtitle':
-              'Support request "${ticket.title}" submitted successfully.',
-          'time': _formattedTicketDate(ticket.createdAt),
-          'icon': Icons.confirmation_number_outlined,
-          'color': warning,
-          'ticket': ticket,
-        });
-      }
-    }
-    return list;
-  }
-
   // --- TAB 3: HELP & SUPPORT ---
   Widget _buildHelpTab() {
     final theme = Theme.of(context);
     final textSecondary = theme.colorScheme.onSurfaceVariant;
-    final notifications = _dynamicNotifications;
 
     return ListView(
       padding: const EdgeInsets.all(18),
@@ -727,7 +780,26 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
           ),
         ),
         const SizedBox(height: 10),
-        if (notifications.isEmpty)
+        if (_notificationError != null)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Text(
+                    _notificationError!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: textSecondary),
+                  ),
+                  TextButton(
+                    onPressed: _loadNotifications,
+                    child: const Text('Try again'),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else if (_notifications.isEmpty)
           Center(
             child: Padding(
               padding: const EdgeInsets.all(40),
@@ -738,98 +810,77 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
             ),
           )
         else
-          ...notifications.map(
-            (n) => Card(
+          ..._notifications.map((notification) {
+            Ticket? ticket;
+            for (final item in _tickets) {
+              if (item.id == notification['ticket_id'].toString()) {
+                ticket = item;
+                break;
+              }
+            }
+            final action =
+                notification['action']?.toString() ?? 'Ticket updated';
+            final actor = notification['actor_name']?.toString();
+            final details = notification['details']?.toString();
+            final timestamp = DateTime.tryParse(
+              notification['created_at']?.toString() ?? '',
+            );
+            final isComplete =
+                action.contains('resolved') || action.contains('closed');
+            final icon = isComplete
+                ? Icons.check_circle_outline_rounded
+                : action.contains('Note') || action.contains('note')
+                ? Icons.note_alt_outlined
+                : Icons.sync_outlined;
+            final color = isComplete ? success : theme.colorScheme.primary;
+
+            return Card(
               margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
-                onTap: () => _openTicketDetails(n['ticket'] as Ticket),
+                onTap: ticket == null
+                    ? null
+                    : () => _openTicketDetails(ticket!),
                 leading: Container(
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: (n['color'] as Color).withValues(alpha: 0.12),
+                    color: color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    n['icon'] as IconData,
-                    color: n['color'] as Color,
-                  ),
+                  child: Icon(icon, color: color),
                 ),
                 title: Text(
-                  n['title'] as String,
+                  '${notification['ticket_number']}: $action',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 subtitle: Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    n['subtitle'] as String,
+                    [
+                      if (actor != null && actor.isNotEmpty) actor,
+                      if (details != null && details.isNotEmpty) details,
+                      if (timestamp != null) _formattedTicketDate(timestamp),
+                    ].join('\n'),
                     style: TextStyle(color: textSecondary, fontSize: 13),
                   ),
                 ),
                 trailing: const Icon(Icons.chevron_right_rounded, size: 18),
               ),
-            ),
-          ),
+            );
+          }),
       ],
     );
   }
 
   Widget _buildWhatsAppTab() {
     final theme = Theme.of(context);
-    final secondary = theme.colorScheme.onSurfaceVariant;
-
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
       children: [
         buildUserHeader(context, roleTitle: 'Reporter'),
-        Text(
-          'WhatsApp Support',
-          style: TextStyle(
-            fontSize: 21,
-            fontWeight: FontWeight.w800,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
+        Text('WhatsApp Support', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE7F7F1),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFC9EBDD)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const CircleAvatar(
-                radius: 27,
-                backgroundColor: Color(0xFF00A884),
-                child: Icon(Icons.chat_rounded, color: Colors.white, size: 28),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Chat with IT Support',
-                style: TextStyle(
-                  color: Color(0xFF123D59),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                'Send a message describing your IT issue in the WhatsApp chat '
-                'you joined. We’ll ask a few questions and create a ticket for you.',
-                style: TextStyle(color: secondary, height: 1.45),
-              ),
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: _openCreateTicket,
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Create a ticket here instead'),
-              ),
-            ],
-          ),
-        ),
+        WhatsAppSupportPanel(onOpen: _openWhatsApp),
       ],
     );
   }

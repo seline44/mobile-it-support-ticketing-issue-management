@@ -160,6 +160,25 @@ void main() {
             200,
           );
         }
+        if (request.url.path == '/tickets/notifications') {
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 87,
+                'ticket_id': 21,
+                'ticket_number': 'TD-21',
+                'ticket_title': 'My live account ticket',
+                'action': 'Ticket resolved',
+                'details': 'Resolution: Access restored.',
+                'old_status': 'In Progress',
+                'new_status': 'Resolved',
+                'actor_name': 'Jordan Technician',
+                'created_at': DateTime.now().toIso8601String(),
+              },
+            ]),
+            200,
+          );
+        }
         return http.Response('Not found', 404);
       });
 
@@ -194,6 +213,30 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Selina Wanjiku'), findsWidgets);
         expect(find.text('selina@example.org'), findsWidgets);
+        await tester.tap(find.byTooltip('Notifications'));
+        await tester.pumpAndSettle();
+        expect(find.text('Recent updates'), findsOneWidget);
+        await tester.drag(find.byType(ListView).last, const Offset(0, -500));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('TD-21: Ticket resolved'), findsOneWidget);
+        expect(find.textContaining('Access restored'), findsOneWidget);
+        await tester.tap(find.text('WhatsApp').last);
+        await tester.pumpAndSettle();
+        expect(find.text('WhatsApp Support'), findsOneWidget);
+        expect(find.text('Chat with IT Support'), findsOneWidget);
+        expect(find.text('Open WhatsApp'), findsOneWidget);
+        expect(find.text('Create a ticket here instead'), findsNothing);
+        expect(
+          tester.widget<Text>(find.text('Chat with IT Support')).textAlign,
+          TextAlign.center,
+        );
+        expect(
+          tester
+              .widget<Text>(find.text('Chat with IT Support'))
+              .style
+              ?.fontFamily,
+          'PlusJakartaSans',
+        );
         expect(tester.takeException(), isNull);
       }, () => reporterClient);
 
@@ -299,6 +342,20 @@ void main() {
           200,
         );
       }
+      if (request.url.path == '/admin/notifications/whatsapp') {
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 101,
+              'ticket_id': 42,
+              'ticket_number': 'TD-WA-42',
+              'title': 'WhatsApp Wi-Fi request',
+              'created_at': DateTime.now().toIso8601String(),
+            },
+          ]),
+          200,
+        );
+      }
       if (request.url.path == '/admin/users/8/approval' &&
           request.method == 'PATCH') {
         updatedApproval =
@@ -337,6 +394,14 @@ void main() {
       expect(find.text('Overview'), findsOneWidget);
       expect(find.text('Triage Admin'), findsWidgets);
       expect(find.text('Total tickets'), findsOneWidget);
+      await tester.tap(find.byTooltip('Notifications / Refresh'));
+      await tester.pumpAndSettle();
+      expect(find.text('Notifications'), findsOneWidget);
+      expect(find.text('TD-WA-42'), findsOneWidget);
+      expect(find.text('WhatsApp Wi-Fi request'), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
       await tester.scrollUntilVisible(
         find.text('Wi-Fi not connecting'),
         300,
@@ -448,6 +513,10 @@ void main() {
       await tester.tap(find.text('Reports'));
       await tester.pumpAndSettle();
       expect(find.text('By category'), findsOneWidget);
+      expect(find.text('Download report'), findsOneWidget);
+      expect(find.text('PDF'), findsOneWidget);
+      expect(find.text('Word'), findsOneWidget);
+      expect(find.text('Excel'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }, () => client);
   });
@@ -495,6 +564,25 @@ void main() {
           200,
         );
       }
+      if (request.url.path == '/tickets/notifications') {
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 91,
+              'ticket_id': 51,
+              'ticket_number': 'TD-51',
+              'ticket_title': 'Assigned to this technician',
+              'action': 'Ticket created via WhatsApp',
+              'details': 'New request from WhatsApp.',
+              'old_status': null,
+              'new_status': 'Open',
+              'actor_name': 'Selina Wanjiku',
+              'created_at': DateTime.now().toIso8601String(),
+            },
+          ]),
+          200,
+        );
+      }
       return http.Response('Not found', 404);
     });
 
@@ -511,11 +599,104 @@ void main() {
       expect(find.text('Assigned to this technician'), findsWidgets);
       expect(find.text('John Doe updated ticket #TKT-0011'), findsNothing);
       expect(find.text('Sarah K. created ticket #TKT-0012'), findsNothing);
+      await tester.tap(find.byTooltip('Notifications / Refresh'));
+      await tester.pumpAndSettle();
+      expect(find.text('TD-51: Ticket created via WhatsApp'), findsOneWidget);
+      expect(find.textContaining('New request from WhatsApp.'), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('WhatsApp'));
+      await tester.pumpAndSettle();
+      expect(find.text('WhatsApp Support'), findsOneWidget);
+      expect(find.text('Open WhatsApp'), findsOneWidget);
 
       await tester.tap(find.text('Profile'));
       await tester.pumpAndSettle();
       expect(find.text('Asha Njeri'), findsWidgets);
       expect(find.textContaining('asha@example.org'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    }, () => client);
+  });
+
+  testWidgets('reporter can submit a reason to reopen a completed ticket', (
+    WidgetTester tester,
+  ) async {
+    String? reopeningReason;
+    final client = MockClient((request) async {
+      if (request.url.path == '/auth/login') {
+        return http.Response(
+          jsonEncode({
+            'access_token': 'reporter-token',
+            'user': {
+              'id': 14,
+              'full_name': 'Selina Wanjiku',
+              'email': 'selina@example.org',
+              'role': 'Reporter',
+            },
+          }),
+          200,
+        );
+      }
+      if (request.url.path == '/tickets/71/history' ||
+          request.url.path == '/tickets/71/notes') {
+        return http.Response('[]', 200);
+      }
+      if (request.url.path == '/tickets/71/reopen' &&
+          request.method == 'POST') {
+        reopeningReason =
+            (jsonDecode(request.body) as Map<String, dynamic>)['reason']
+                as String;
+        return http.Response(
+          jsonEncode({
+            'status': 'Open',
+            'resolution': 'The network adapter was replaced.',
+          }),
+          200,
+        );
+      }
+      return http.Response('Not found', 404);
+    });
+
+    await http.runWithClient(() async {
+      await ApiService.login(email: 'selina@example.org', password: 'pass');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: const TicketDetailsScreen(
+            id: '71',
+            title: 'Wi-Fi still disconnects',
+            description: 'The connection drops every few minutes.',
+            category: 'Network',
+            impact: 'Medium',
+            urgency: 'High',
+            device: 'Laptop',
+            location: 'Office',
+            status: 'Resolved',
+            resolution: 'The network adapter was replaced.',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Reopen ticket'), findsOneWidget);
+      await tester.tap(find.text('Reopen ticket'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.labelText == 'Why are you unsatisfied?',
+        ),
+        'The Wi-Fi still disconnects.',
+      );
+      await tester.pump();
+      await tester.tap(find.text('Reopen ticket').last);
+      await tester.pumpAndSettle();
+
+      expect(reopeningReason, 'The Wi-Fi still disconnects.');
+      expect(find.text('Open'), findsOneWidget);
+      expect(find.text('Ticket reopened successfully.'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }, () => client);
   });

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/ticket.dart';
 import '../services/api_service.dart';
+import '../services/report_export_service.dart';
 import '../theme/td_theme.dart';
 import '../widgets/td_ticket_widgets.dart';
 import '../widgets/td_widgets.dart';
@@ -57,12 +60,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
   bool _isLoading = true;
   String? _loadError;
   int _pendingApprovals = 0;
+  List<Map<String, dynamic>> _whatsAppNotifications = [];
+  final Set<int> _unreadWhatsAppNotificationIds = {};
+  Timer? _notificationTimer;
+  bool _notificationsInitialized = false;
+  String? _notificationError;
 
   @override
   void initState() {
     super.initState();
     _loadTickets();
     _loadPendingApprovals();
+    _loadWhatsAppNotifications();
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _loadWhatsAppNotifications(detectNew: true),
+    );
+  }
+
+  @override
+  void dispose() {
+    _notificationTimer?.cancel();
+    super.dispose();
   }
 
   // ---- Data logic ------------------------------------------------------------
@@ -108,7 +127,135 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Future<void> _refreshAll() async {
-    await Future.wait([_loadTickets(), _loadPendingApprovals()]);
+    await Future.wait([
+      _loadTickets(),
+      _loadPendingApprovals(),
+      _loadWhatsAppNotifications(detectNew: true),
+    ]);
+  }
+
+  Future<void> _loadWhatsAppNotifications({bool detectNew = false}) async {
+    try {
+      final response = await ApiService.getWhatsAppTicketNotifications();
+      final notifications = response
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final previousIds = _whatsAppNotifications
+          .map((notification) => int.tryParse(notification['id'].toString()))
+          .whereType<int>()
+          .toSet();
+      final newNotifications = _notificationsInitialized && detectNew
+          ? notifications.where((notification) {
+              final id = int.tryParse(notification['id'].toString());
+              return id != null && !previousIds.contains(id);
+            }).toList()
+          : <Map<String, dynamic>>[];
+
+      if (!mounted) return;
+      setState(() {
+        _whatsAppNotifications = notifications;
+        _notificationError = null;
+        for (final notification in newNotifications) {
+          final id = int.tryParse(notification['id'].toString());
+          if (id != null) _unreadWhatsAppNotificationIds.add(id);
+        }
+        _notificationsInitialized = true;
+      });
+
+      if (newNotifications.isNotEmpty) {
+        await _loadTickets();
+        if (!mounted) return;
+        final latest = newNotifications.first;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'New WhatsApp ticket ${latest['ticket_number']}: ${latest['title']}',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () => _notificationError = error.toString().replaceFirst(
+          'Exception: ',
+          '',
+        ),
+      );
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await _refreshAll();
+    if (!mounted) return;
+    setState(() => _unreadWhatsAppNotificationIds.clear());
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Notifications'),
+        content: SizedBox(
+          width: 420,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              if (_pendingApprovals > 0)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.person_outline_rounded),
+                  title: Text(
+                    '$_pendingApprovals account'
+                    '${_pendingApprovals == 1 ? '' : 's'} awaiting review',
+                  ),
+                ),
+              if (_notificationError != null)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(_notificationError!),
+                )
+              else if (_whatsAppNotifications.isEmpty)
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    'No tickets have been raised through WhatsApp yet.',
+                  ),
+                )
+              else
+                ..._whatsAppNotifications.map((notification) {
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.chat_bubble_outline_rounded),
+                    title: Text(notification['ticket_number'].toString()),
+                    subtitle: Text(notification['title'].toString()),
+                  );
+                }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+          if (_pendingApprovals > 0)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _openUsers();
+              },
+              child: const Text('Review accounts'),
+            ),
+          if (_whatsAppNotifications.isNotEmpty)
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                setState(() => _currentIndex = 1);
+              },
+              child: const Text('View tickets'),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openUsers() async {
@@ -232,9 +379,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   : ApiService.currentUserName,
               role: 'Administrator',
               initials: ApiService.currentUserInitials,
-              showDot: _pendingApprovals > 0,
+              showDot:
+                  _pendingApprovals > 0 ||
+                  _unreadWhatsAppNotificationIds.isNotEmpty,
               onAvatarTap: _openAccountSheet,
-              onBellTap: _pendingApprovals > 0 ? _openUsers : _refreshAll,
+              onBellTap: _openNotifications,
             ),
             Expanded(child: body),
           ],
@@ -1044,10 +1193,45 @@ class _AdminTicketsScreenState extends State<AdminTicketsScreen> {
 // ============================================================
 // REPORTS
 // ============================================================
-class AdminReportsScreen extends StatelessWidget {
+class AdminReportsScreen extends StatefulWidget {
   final List<Ticket> tickets;
 
   const AdminReportsScreen({super.key, required this.tickets});
+
+  @override
+  State<AdminReportsScreen> createState() => _AdminReportsScreenState();
+}
+
+class _AdminReportsScreenState extends State<AdminReportsScreen> {
+  TicketReportFormat? _exportingFormat;
+
+  Future<void> _exportReport(TicketReportFormat format) async {
+    setState(() => _exportingFormat = format);
+    try {
+      final saved = await ReportExportService.export(widget.tickets, format);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            saved
+                ? 'Report exported successfully.'
+                : 'Report export was canceled.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not export report: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exportingFormat = null);
+    }
+  }
 
   Color _statusColor(String status) {
     switch (status) {
@@ -1071,16 +1255,16 @@ class AdminReportsScreen extends StatelessWidget {
 
     final statusCounts = <String, int>{};
     final categoryCounts = <String, int>{};
-    for (final ticket in tickets) {
+    for (final ticket in widget.tickets) {
       statusCounts.update(ticket.status, (c) => c + 1, ifAbsent: () => 1);
       categoryCounts.update(ticket.category, (c) => c + 1, ifAbsent: () => 1);
     }
 
-    final total = tickets.length;
+    final total = widget.tickets.length;
     final resolved =
         (statusCounts['Resolved'] ?? 0) + (statusCounts['Closed'] ?? 0);
     final rate = total == 0 ? 0 : (resolved * 100 / total).round();
-    final activeNow = tickets.where(tdIsActive).length;
+    final activeNow = widget.tickets.where(tdIsActive).length;
 
     final statusEntries = statusCounts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
@@ -1098,6 +1282,30 @@ class AdminReportsScreen extends StatelessWidget {
         Text(
           'Ticket overview and breakdown',
           style: theme.textTheme.bodySmall?.copyWith(fontSize: 13.5),
+        ),
+        const SizedBox(height: 16),
+        Text('Download report', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _exportButton(
+              format: TicketReportFormat.pdf,
+              label: 'PDF',
+              icon: Icons.picture_as_pdf_outlined,
+            ),
+            _exportButton(
+              format: TicketReportFormat.word,
+              label: 'Word',
+              icon: Icons.description_outlined,
+            ),
+            _exportButton(
+              format: TicketReportFormat.excel,
+              label: 'Excel',
+              icon: Icons.table_chart_outlined,
+            ),
+          ],
         ),
         const SizedBox(height: 16),
 
@@ -1178,6 +1386,24 @@ class AdminReportsScreen extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _exportButton({
+    required TicketReportFormat format,
+    required String label,
+    required IconData icon,
+  }) {
+    final isExporting = _exportingFormat == format;
+    return OutlinedButton.icon(
+      onPressed: _exportingFormat == null ? () => _exportReport(format) : null,
+      icon: isExporting
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(icon),
+      label: Text(isExporting ? 'Preparing...' : label),
     );
   }
 }

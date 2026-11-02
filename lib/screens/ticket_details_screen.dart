@@ -124,6 +124,56 @@ class _CompleteTicketDialogState extends State<_CompleteTicketDialog> {
   }
 }
 
+class _ReopenTicketDialog extends StatefulWidget {
+  const _ReopenTicketDialog();
+
+  @override
+  State<_ReopenTicketDialog> createState() => _ReopenTicketDialogState();
+}
+
+class _ReopenTicketDialogState extends State<_ReopenTicketDialog> {
+  final _reasonController = TextEditingController();
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canReopen = _reasonController.text.trim().length >= 3;
+    return AlertDialog(
+      title: const Text('Reopen ticket'),
+      content: TextField(
+        controller: _reasonController,
+        autofocus: true,
+        minLines: 2,
+        maxLines: 4,
+        maxLength: 2000,
+        decoration: const InputDecoration(
+          labelText: 'Why are you unsatisfied?',
+          hintText: 'Explain what still needs attention',
+          alignLabelWithHint: true,
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: canReopen
+              ? () => Navigator.pop(context, _reasonController.text.trim())
+              : null,
+          child: const Text('Reopen ticket'),
+        ),
+      ],
+    );
+  }
+}
+
 class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
   final TextEditingController _commentController = TextEditingController();
   final List<Map<String, dynamic>> _updates = [];
@@ -326,6 +376,49 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     }
   }
 
+  Future<void> _reopenTicket() async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => const _ReopenTicketDialog(),
+    );
+    if (!mounted || reason == null) return;
+
+    final ticketId = int.tryParse(widget.id);
+    if (ticketId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not identify this ticket.')),
+      );
+      return;
+    }
+
+    setState(() => _isSavingStatus = true);
+    try {
+      final result = await ApiService.reopenTicket(
+        ticketId: ticketId,
+        reason: reason,
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = result['status']?.toString() ?? 'Open';
+        _resolution = result['resolution']?.toString() ?? _resolution;
+      });
+      await _loadHistory();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ticket reopened successfully.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingStatus = false);
+    }
+  }
+
   String _formatHistoryTime(DateTime createdAt) {
     final date = createdAt.toLocal();
     final now = DateTime.now();
@@ -386,6 +479,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     final priority = _calculatedPriority();
     final priorityColor = _priorityColor();
     final isTechnician = ApiService.currentUser?['role'] == 'Technician';
+    final isReporter = ApiService.currentUser?['role'] == 'Reporter';
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -498,6 +592,24 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                             : const Icon(Icons.task_alt_rounded),
                         label: const Text('Resolve or close ticket'),
                       ),
+                    ),
+                  ],
+                  if (isReporter &&
+                      {'Resolved', 'Closed'}.contains(_status)) ...[
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _isSavingStatus ? null : _reopenTicket,
+                        icon: const Icon(Icons.replay_rounded),
+                        label: const Text('Reopen ticket'),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'If the issue is not fixed, tell us what still needs attention.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: textSecondary, fontSize: 12),
                     ),
                   ],
 

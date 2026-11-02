@@ -54,6 +54,8 @@ Add these environment variables to the web service in the Render dashboard:
 | `DATABASE_URL` | Internal connection string from the migrated Render PostgreSQL database |
 | `JWT_SECRET_KEY` | A new, randomly generated secret |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID (needed for outbound WhatsApp updates) |
+| `TWILIO_WHATSAPP_FROM` | Approved Twilio WhatsApp sender, e.g. `whatsapp:+15551234567` |
 
 Enter secret values directly in Render's environment settings. Do not put them
 in `render.yaml`, source code, or Git. The startup command creates any missing tables and applies the existing
@@ -88,6 +90,14 @@ the app does not need the Twilio Account SID or sender number configured.
 Free-form replies are supported during WhatsApp's 24-hour customer service
 window after a Reporter messages the Sandbox.
 
+To send ticket acceptance, status, and technician-note updates to a linked
+Reporter, configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and
+`TWILIO_WHATSAPP_FROM` in the backend environment. The sender must be enabled
+for WhatsApp. These outbound messages are attempted after the ticket update is
+committed; delivery failures are logged and do not undo the ticket change.
+WhatsApp may require an approved message template when messaging outside the
+24-hour customer service window.
+
 Create the new WhatsApp tables in the configured database before using the
 webhook:
 
@@ -117,6 +127,9 @@ the ticket in the existing database, and replies with its ticket number and
 priority. Send `CANCEL` to stop an in-progress ticket conversation. Duplicate
 Twilio webhook deliveries are handled idempotently.
 
-The current milestone sends ticket conversation replies to the Reporter.
-Technician notifications and technician status updates through WhatsApp are
-not part of this milestone.
+The Administrator dashboard checks the WhatsApp ticket notification feed
+every 30 seconds and displays newly created WhatsApp tickets in its in-app
+notifications and ticket list. Reporter and Technician dashboards also check
+ticket history notifications every 30 seconds, including tickets created via
+WhatsApp and technician updates. These are in-app notifications, not mobile
+push or email alerts.

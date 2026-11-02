@@ -3,16 +3,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'screens/login_screen.dart';
 import 'services/theme_service.dart';
+import 'services/whatsapp_contact.dart';
 import 'theme/app_theme.dart';
 import 'widgets/triagedesk_logo.dart';
 import 'widgets/viewport_wrapper.dart';
-
-// ---------------------------------------------------------------------------
-// Config: replace with your real WhatsApp support number (country code, no
-// plus sign or spaces), e.g. Kenya: 2547XXXXXXXX
-// ---------------------------------------------------------------------------
-const String kWhatsAppNumber = '254700000000';
-const String kWhatsAppPrefill = 'Hi, I need help with an IT issue.';
 
 // Design tokens
 const Color _deepTeal = Color(0xFF06505A);
@@ -53,8 +47,8 @@ class WelcomeScreen extends StatelessWidget {
 
   Future<void> _openWhatsApp(BuildContext context) async {
     final uri = Uri.parse(
-      'https://wa.me/$kWhatsAppNumber'
-      '?text=${Uri.encodeComponent(kWhatsAppPrefill)}',
+      'https://wa.me/$whatsappSupportNumber'
+      '?text=${Uri.encodeComponent(whatsappSupportMessage)}',
     );
 
     bool opened = false;

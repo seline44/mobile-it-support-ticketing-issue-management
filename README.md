@@ -9,6 +9,13 @@ when initialized.
 
 A new Flutter project.
 
+## Admin report exports
+
+Administrators can export the current ticket report from the Reports tab as
+PDF, Word (`.docx`), or Excel (`.xlsx`). Exports include ticket totals,
+resolution rate, status and category breakdowns, and ticket records. Use the
+save dialog on desktop or mobile, or the browser download in web builds.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

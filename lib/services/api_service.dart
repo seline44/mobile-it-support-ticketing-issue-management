@@ -129,6 +129,16 @@ class ApiService {
     throw Exception(_error(decoded, 'Could not load tickets'));
   }
 
+  static Future<List<dynamic>> getTicketNotifications() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/tickets/notifications'),
+      headers: _headers,
+    );
+    final decoded = _decode(response);
+    if (response.statusCode == 200 && decoded is List) return decoded;
+    throw Exception(_error(decoded, 'Could not load ticket notifications'));
+  }
+
   static Future<List<dynamic>> getTicketHistory(int ticketId) async {
     final response = await http.get(
       Uri.parse('$baseUrl/tickets/$ticketId/history'),
@@ -234,10 +244,14 @@ class ApiService {
     throw Exception(_error(decoded, 'Could not save technician note'));
   }
 
-  static Future<Map<String, dynamic>> reopenTicket(int ticketId) async {
+  static Future<Map<String, dynamic>> reopenTicket({
+    required int ticketId,
+    required String reason,
+  }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/tickets/$ticketId/reopen'),
       headers: _headers,
+      body: jsonEncode({'reason': reason.trim()}),
     );
 
     final decoded = _decode(response);
@@ -245,6 +259,16 @@ class ApiService {
       return Map<String, dynamic>.from(decoded);
     }
     throw Exception(_error(decoded, 'Could not reopen ticket'));
+  }
+
+  static Future<List<dynamic>> getWhatsAppTicketNotifications() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/notifications/whatsapp'),
+      headers: _headers,
+    );
+    final decoded = _decode(response);
+    if (response.statusCode == 200 && decoded is List) return decoded;
+    throw Exception(_error(decoded, 'Could not load WhatsApp notifications'));
   }
 
   static Future<List<dynamic>> getPendingUsers() async {

@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/ticket.dart';
 import '../services/api_service.dart';
+import '../services/whatsapp_contact.dart';
 import '../theme/td_theme.dart';
 import '../widgets/td_ticket_widgets.dart';
 import '../widgets/td_widgets.dart';
+import '../widgets/whatsapp_support_panel.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
 import 'ticket_details_screen.dart';
@@ -17,13 +22,19 @@ class TechnicianDashboard extends StatefulWidget {
 }
 
 class _TechnicianDashboardState extends State<TechnicianDashboard> {
-  // 0 Home, 1 Assigned, 2 Tickets, 3 Profile
+  // 0 Home, 1 Assigned, 2 Tickets, 3 WhatsApp, 4 Profile
   int _currentIndex = 0;
 
   List<Ticket> _tickets = [];
   final Set<String> _acceptingTicketIds = {};
   bool _loading = true;
   String? _error;
+  List<Map<String, dynamic>> _notifications = [];
+  final Set<int> _unreadNotificationIds = {};
+  Timer? _notificationTimer;
+  bool _notificationsInitialized = false;
+  String? _notificationError;
+  Future<void>? _notificationLoad;
 
   String _assignedFilter = 'All';
   String _ticketFilter = 'All';
@@ -42,12 +53,129 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
   void initState() {
     super.initState();
     _refreshTickets();
+    _loadNotifications();
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _loadNotifications(detectNew: true),
+    );
   }
 
   @override
   void dispose() {
+    _notificationTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadNotifications({bool detectNew = false}) async {
+    final pendingLoad = _notificationLoad;
+    if (pendingLoad != null) {
+      await pendingLoad;
+      return;
+    }
+
+    final load = _fetchNotifications(detectNew: detectNew);
+    _notificationLoad = load;
+    try {
+      await load;
+    } finally {
+      if (identical(_notificationLoad, load)) _notificationLoad = null;
+    }
+  }
+
+  Future<void> _fetchNotifications({required bool detectNew}) async {
+    try {
+      final response = await ApiService.getTicketNotifications();
+      final notifications = response
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final previousIds = _notifications
+          .map((notification) => int.tryParse(notification['id'].toString()))
+          .whereType<int>()
+          .toSet();
+      final newNotifications = _notificationsInitialized && detectNew
+          ? notifications.where((notification) {
+              final id = int.tryParse(notification['id'].toString());
+              return id != null && !previousIds.contains(id);
+            }).toList()
+          : <Map<String, dynamic>>[];
+
+      if (!mounted) return;
+      setState(() {
+        _notifications = notifications;
+        _notificationError = null;
+        for (final notification in newNotifications) {
+          final id = int.tryParse(notification['id'].toString());
+          if (id != null) _unreadNotificationIds.add(id);
+        }
+        _notificationsInitialized = true;
+      });
+
+      if (newNotifications.isNotEmpty) {
+        final latest = newNotifications.first;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${latest['ticket_number']}: ${latest['action']}'),
+          ),
+        );
+        await _refreshTickets();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () => _notificationError = error.toString().replaceFirst(
+          'Exception: ',
+          '',
+        ),
+      );
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await _loadNotifications();
+    if (!mounted) return;
+    setState(() => _unreadNotificationIds.clear());
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Notifications'),
+        content: SizedBox(
+          width: 420,
+          child: _notificationError != null
+              ? Text(_notificationError!)
+              : _notifications.isEmpty
+              ? const Text('No ticket updates yet.')
+              : ListView(
+                  shrinkWrap: true,
+                  children: _notifications.map((notification) {
+                    final details = notification['details']?.toString();
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.confirmation_number_outlined),
+                      title: Text(
+                        '${notification['ticket_number']}: '
+                        '${notification['action']}',
+                      ),
+                      subtitle: Text(
+                        [
+                          if (details != null && details.isNotEmpty) details,
+                          if (notification['ticket_title'] != null)
+                            notification['ticket_title'].toString(),
+                        ].join('\n'),
+                      ),
+                    );
+                  }).toList(),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ---- Data logic (unchanged) ----------------------------------------------
@@ -77,6 +205,25 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _openWhatsApp() async {
+    final uri = Uri.https('wa.me', '/$whatsappSupportNumber', {
+      'text': whatsappSupportMessage,
+    });
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open WhatsApp.')),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open WhatsApp: $error')),
+      );
     }
   }
 
@@ -234,15 +381,16 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
               name: _technicianName.isEmpty ? 'Technician' : _technicianName,
               role: 'Technician',
               initials: ApiService.currentUserInitials,
-              showDot: _pendingCount > 0,
-              onBellTap: _refreshTickets,
-              onAvatarTap: () => setState(() => _currentIndex = 3),
+              showDot: _pendingCount > 0 || _unreadNotificationIds.isNotEmpty,
+              onBellTap: _openNotifications,
+              onAvatarTap: () => setState(() => _currentIndex = 4),
             ),
             Expanded(
               child: switch (_currentIndex) {
                 1 => _buildAssignedTab(),
                 2 => _buildTicketsTab(),
-                3 => _buildProfileTab(),
+                3 => _buildWhatsAppTab(),
+                4 => _buildProfileTab(),
                 _ => _buildHomeTab(),
               },
             ),
@@ -269,12 +417,29 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
             label: 'Tickets',
           ),
           NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline_rounded),
+            selectedIcon: Icon(Icons.chat_bubble_rounded),
+            label: 'WhatsApp',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
             selectedIcon: Icon(Icons.person_rounded),
             label: 'Profile',
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildWhatsAppTab() {
+    final theme = Theme.of(context);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+      children: [
+        Text('WhatsApp Support', style: theme.textTheme.headlineSmall),
+        const SizedBox(height: 16),
+        WhatsAppSupportPanel(onOpen: _openWhatsApp),
+      ],
     );
   }
 

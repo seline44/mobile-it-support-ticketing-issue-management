@@ -74,3 +74,16 @@ class TicketHistoryResponse(BaseModel):
     new_status: str | None
     details: str | None
     created_at: datetime
+
+
+class TicketNotificationResponse(BaseModel):
+    id: int
+    ticket_id: int
+    ticket_number: str
+    ticket_title: str
+    action: str
+    details: str | None
+    old_status: str | None
+    new_status: str | None
+    actor_name: str | None
+    created_at: datetime

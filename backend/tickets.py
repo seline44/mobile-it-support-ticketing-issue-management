@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from auth import get_current_user, require_roles
@@ -16,8 +16,10 @@ from schemas import (
     StatusUpdate,
     TicketCreate,
     TicketHistoryResponse,
+    TicketNotificationResponse,
     TicketResponse,
 )
+from whatsapp_notifications import send_reporter_whatsapp_update
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
@@ -202,6 +204,76 @@ def list_tickets(
     return [serialize_ticket(db, ticket) for ticket in tickets]
 
 
+@router.get(
+    "/notifications",
+    response_model=list[TicketNotificationResponse],
+)
+def list_notifications(
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    query = (
+        db.query(TicketHistory, Ticket, User.full_name)
+        .join(Ticket, TicketHistory.ticket_id == Ticket.id)
+        .outerjoin(User, TicketHistory.actor_id == User.id)
+    )
+
+    if user.role == "Reporter":
+        query = query.filter(
+            Ticket.reporter_id == user.id,
+            TicketHistory.actor_id != user.id,
+        )
+    elif user.role == "Technician":
+        new_ticket_actions = (
+            "Ticket created",
+            "Ticket created via WhatsApp",
+            "Ticket reopened",
+        )
+        query = query.filter(
+            or_(
+                and_(
+                    Ticket.assigned_technician_id == user.id,
+                    TicketHistory.actor_id != user.id,
+                ),
+                and_(
+                    Ticket.status.in_(("Open", "Pending")),
+                    Ticket.assigned_technician_id.is_(None),
+                    TicketHistory.action.in_(new_ticket_actions),
+                ),
+            )
+        )
+    else:
+        raise HTTPException(
+            status_code=403,
+            detail="Notifications are available to Reporters and Technicians.",
+        )
+
+    rows = (
+        query.order_by(
+            TicketHistory.created_at.desc(),
+            TicketHistory.id.desc(),
+        )
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": history.id,
+            "ticket_id": ticket.id,
+            "ticket_number": ticket.ticket_number,
+            "ticket_title": ticket.title,
+            "action": history.action,
+            "details": history.details,
+            "old_status": history.old_status,
+            "new_status": history.new_status,
+            "actor_name": actor_name,
+            "created_at": history.created_at,
+        }
+        for history, ticket, actor_name in rows
+    ]
+
+
 @router.get("/{ticket_id}", response_model=TicketResponse)
 def get_ticket(
     ticket_id: int,
@@ -243,6 +315,12 @@ def accept_ticket(
 
     db.commit()
     db.refresh(ticket)
+    send_reporter_whatsapp_update(
+        db,
+        ticket,
+        f"{user.full_name} accepted ticket {ticket.ticket_number} and is "
+        "working on it.",
+    )
     return serialize_ticket(db, ticket)
 
 
@@ -311,6 +389,12 @@ def update_ticket_status(
                     note=note_text,
                 )
             )
+        if note_text:
+            history_details = (
+                f"{history_details}\nUpdate: {note_text}"
+                if history_details
+                else f"Update: {note_text}"
+            )
         record_history(
             db,
             ticket,
@@ -322,6 +406,16 @@ def update_ticket_status(
         )
         db.commit()
         db.refresh(ticket)
+        if user.role == "Technician":
+            update_message = (
+                f"{user.full_name} updated ticket {ticket.ticket_number}: "
+                f"{old_status} -> {ticket.status}."
+            )
+            if resolution:
+                update_message += f"\nResolution: {resolution}"
+            if note_text:
+                update_message += f"\nUpdate: {note_text}"
+            send_reporter_whatsapp_update(db, ticket, update_message)
         return serialize_ticket(db, ticket)
     except Exception:
         db.rollback()
@@ -443,11 +537,18 @@ def add_ticket_note(
             ticket,
             user.id,
             "Note added",
-            details="Ticket note added",
+            details=f"Update: {note_text}",
         )
         ticket.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(note)
+        if user.role == "Technician":
+            send_reporter_whatsapp_update(
+                db,
+                ticket,
+                f"{user.full_name} added an update to ticket "
+                f"{ticket.ticket_number}:\n{note_text}",
+            )
         return note
     except Exception:
         db.rollback()

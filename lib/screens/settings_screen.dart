@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api_service.dart';
 import '../services/theme_service.dart';
+import '../services/whatsapp_contact.dart';
 import '../theme/app_theme.dart';
 import '../widgets/triagedesk_logo.dart';
 import 'login_screen.dart';
@@ -12,7 +13,8 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _launchWhatsApp(BuildContext context) async {
     final uri = Uri.parse(
-      'https://wa.me/254700000000?text=Hi,%20I%20need%20help%20with%20a%20TriageDesk%20issue.',
+      'https://wa.me/$whatsappSupportNumber'
+      '?text=${Uri.encodeComponent(whatsappSupportMessage)}',
     );
     try {
       if (await canLaunchUrl(uri)) {

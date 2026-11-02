@@ -1,14 +1,21 @@
 
+from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from auth import require_roles
 from database import get_db
-from models import User, WhatsAppContact, WhatsAppConversation
+from models import (
+    Ticket,
+    TicketHistory,
+    User,
+    WhatsAppContact,
+    WhatsAppConversation,
+)
 
 router = APIRouter(prefix="/admin", tags=["Administration"])
 
@@ -45,6 +52,14 @@ class WhatsAppLinkResponse(BaseModel):
     message: str
 
 
+class WhatsAppTicketNotification(BaseModel):
+    id: int
+    ticket_id: int
+    ticket_number: str
+    title: str
+    created_at: datetime
+
+
 
 @router.get("/users", response_model=list[PendingUserResponse])
 def list_all_users(
@@ -74,6 +89,35 @@ def list_pending_users(
         .order_by(User.created_at.asc())
         .all()
     )
+
+
+@router.get(
+    "/notifications/whatsapp",
+    response_model=list[WhatsAppTicketNotification],
+)
+def list_whatsapp_ticket_notifications(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("Administrator")),
+):
+    rows = (
+        db.query(TicketHistory, Ticket)
+        .join(Ticket, TicketHistory.ticket_id == Ticket.id)
+        .filter(TicketHistory.action == "Ticket created via WhatsApp")
+        .order_by(TicketHistory.created_at.desc(), TicketHistory.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": history.id,
+            "ticket_id": ticket.id,
+            "ticket_number": ticket.ticket_number,
+            "title": ticket.title,
+            "created_at": history.created_at,
+        }
+        for history, ticket in rows
+    ]
 
 
 @router.patch(
