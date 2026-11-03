@@ -230,7 +230,10 @@ def process_incoming_message(
     contact = db.get(WhatsAppContact, phone_number)
 
     if message_type != "text":
-        response_text = "Please send your IT support request as a text message."
+        response_text = (
+            "📎 I can help with text requests for now.\n"
+            "Please send a short message describing your IT issue."
+        )
     else:
         if contact is None:
             guest_email = f"guest_{phone_number.lstrip('+')}@triagedesk.guest"
@@ -264,8 +267,8 @@ def process_incoming_message(
             or user.approval_status != "Approved"
         ):
             response_text = (
-                "Your linked TriageDesk Reporter account is not currently active. "
-                "Please contact your administrator."
+                "⚠️ I couldn’t access your TriageDesk Reporter account right now.\n"
+                "Please contact your administrator for help."
             )
         else:
             message_text = body.strip()
@@ -276,18 +279,21 @@ def process_incoming_message(
                 if conversation is not None:
                     db.delete(conversation)
                 response_text = (
-                    "Your WhatsApp ticket request was cancelled. "
-                    "Send a new message whenever you need help."
+                    "🛑 *Request cancelled.* No ticket was created.\n"
+                    "Whenever you need support, just send me a new message."
                 )
             elif conversation is None:
                 if len(message_text) < 3 or normalized_text in GREETING_MESSAGES:
                     response_text = (
-                        "Describe the IT issue you're experiencing in your next message "
-                        "to start a ticket. Send CANCEL to stop at any time."
+                        "👋 *Hi! I’m TriageDesk Support.*\n"
+                        "Tell me what’s going wrong with your IT, and I’ll guide "
+                        "you through creating a support ticket.\n\n"
+                        "You can send *CANCEL* anytime to stop."
                     )
                 elif len(message_text) > MAX_DESCRIPTION_LENGTH:
                     response_text = (
-                        "Please describe the issue in 4,000 characters or fewer."
+                        "That’s a little too much detail for one message. "
+                        "Please keep your issue description under 4,000 characters."
                     )
                 else:
                     conversation = WhatsAppConversation(
@@ -297,12 +303,13 @@ def process_incoming_message(
                     )
                     db.add(conversation)
                     response_text = (
-                        "What category best describes the issue?\n"
+                        "📝 *Got it!* Let’s get this to the right team.\n"
+                        "What category fits your issue best?\n\n"
                         + "\n".join(
                             f"{index}. {category}"
                             for index, category in enumerate(CATEGORIES, start=1)
                         )
-                        + "\nReply with the category name or number."
+                        + "\n\nReply with a category name or number."
                     )
             elif conversation.step == "category":
                 category = next(
@@ -310,21 +317,28 @@ def process_incoming_message(
                         item
                         for index, item in enumerate(CATEGORIES, start=1)
                         if normalized_text in {item.casefold(), str(index)}
+                        or (
+                            item == "Account Access"
+                            and normalized_text == "account"
+                        )
                     ),
                     None,
                 )
                 if category is None:
                     response_text = (
-                        "Please reply with one of these categories: "
-                        + ", ".join(CATEGORIES)
-                        + "."
+                        "I didn’t catch that category. Choose one of these:\n"
+                        + "\n".join(
+                            f"• {item}" for item in CATEGORIES
+                        )
+                        + "\n\nYou can reply with the name or its number."
                     )
                 else:
                     conversation.category = category
                     conversation.step = "impact"
                     response_text = (
-                        "How much does the issue affect your work? "
-                        "Reply Low, Medium, or High."
+                        f"✅ *{category}* — got it.\n"
+                        "How much is this affecting your work?\n"
+                        "Reply *Low*, *Medium*, or *High*."
                     )
             elif conversation.step == "impact":
                 impact = next(
@@ -336,12 +350,17 @@ def process_incoming_message(
                     None,
                 )
                 if impact is None:
-                    response_text = "Reply Low, Medium, or High for impact."
+                    response_text = (
+                        "Please choose how much work is affected:\n"
+                        "🟢 *Low* · 🟡 *Medium* · 🔴 *High*"
+                    )
                 else:
                     conversation.impact = impact
                     conversation.step = "urgency"
                     response_text = (
-                        "How urgent is it? Reply Low, Medium, or High."
+                        f"👍 Impact: *{impact}*.\n"
+                        "How soon do you need this resolved?\n"
+                        "Reply *Low*, *Medium*, or *High*."
                     )
             elif conversation.step == "urgency":
                 urgency = next(
@@ -353,12 +372,16 @@ def process_incoming_message(
                     None,
                 )
                 if urgency is None:
-                    response_text = "Reply Low, Medium, or High for urgency."
+                    response_text = (
+                        "Please choose how soon this needs attention:\n"
+                        "🟢 *Low* · 🟡 *Medium* · 🔴 *High*"
+                    )
                 elif conversation.category is None or conversation.impact is None:
                     db.delete(conversation)
                     response_text = (
-                        "Your ticket details were incomplete, so no ticket was created. "
-                        "Describe the issue again to start a new request."
+                        "⚠️ Some request details were missing, so I couldn’t "
+                        "create the ticket.\n"
+                        "Please describe the issue again to start over."
                     )
                 else:
                     conversation.urgency = urgency
@@ -372,14 +395,20 @@ def process_incoming_message(
                     )
                     db.delete(conversation)
                     response_text = (
-                        f"Ticket {ticket.ticket_number} was created successfully. "
-                        f"Priority: {ticket.priority}. Status: Open."
+                        "🎉 *Your support ticket is in!*\n\n"
+                        f"🎫 *Ticket:* {ticket.ticket_number}\n"
+                        f"🗂️ *Category:* {ticket.category}\n"
+                        f"📊 *Priority:* {ticket.priority}\n"
+                        "📌 *Status:* Open\n\n"
+                        "Thanks for the details. Our support team will take it "
+                        "from here."
                     )
             else:
                 db.delete(conversation)
                 response_text = (
-                    "Your previous ticket conversation was reset. "
-                    "Describe the IT issue to start again."
+                    "🔄 I’ve reset the previous request because its step was "
+                    "out of sync.\n"
+                    "Describe your IT issue to start a fresh ticket."
                 )
 
     db.add(

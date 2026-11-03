@@ -87,14 +87,16 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             self.send("wamid.1", "I cannot connect to the lab Wi-Fi."),
         )
         self.assertIn(
-            "affect your work",
+            "affecting your work",
             self.send("wamid.2", "Network").casefold(),
         )
-        self.assertIn("urgent", self.send("wamid.3", "High").casefold())
+        self.assertIn("resolved", self.send("wamid.3", "High").casefold())
         response = self.send("wamid.4", "High")
 
         ticket = self.db.query(Ticket).one()
         self.assertIn(ticket.ticket_number, response)
+        self.assertIn("Your support ticket is in", response)
+        self.assertIn("Priority", response)
         self.assertEqual(ticket.reporter_id, self.reporter.id)
         self.assertEqual(ticket.category, "Network")
         self.assertEqual(ticket.impact, "High")
@@ -207,7 +209,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
 
         response = self.send("wamid.5", "Okay")
 
-        self.assertIn("Describe the IT issue", response)
+        self.assertIn("Tell me what’s going wrong", response)
         self.assertEqual(self.db.query(Ticket).count(), 1)
         self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
 
@@ -227,6 +229,15 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             .count(),
             1,
         )
+
+    def test_account_category_accepts_short_name(self):
+        self.send("wamid.account.1", "I cannot sign in to my account.")
+
+        response = self.send("wamid.account.2", "Account")
+
+        conversation = self.db.query(WhatsAppConversation).one()
+        self.assertEqual(conversation.category, "Account Access")
+        self.assertIn("Account Access", response)
 
     def test_webhook_signature_matches_twilio_request_validator(self):
         url = "https://example.test/webhooks/whatsapp"
@@ -365,10 +376,11 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         send_message.assert_called_once_with(
             "123456",
             "15551234567",
-            "What category best describes the issue?\n"
+            "📝 *Got it!* Let’s get this to the right team.\n"
+            "What category fits your issue best?\n\n"
             "1. Network\n2. Hardware\n3. Software\n4. Email\n"
             "5. Account Access\n6. Printer\n7. Other\n"
-            "Reply with the category name or number.",
+            "\nReply with a category name or number.",
         )
 
     def test_twiml_response_contains_reply_message(self):
@@ -416,7 +428,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
 
         self.assertEqual(result.media_type, "application/xml")
         self.assertIn(
-            "<Message>What category best describes the issue?",
+            "<Message>📝 *Got it!* Let’s get this to the right team.",
             result.body.decode(),
         )
         self.assertEqual(
