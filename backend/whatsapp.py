@@ -197,7 +197,7 @@ def _create_ticket(
         impact=impact,
         urgency=urgency,
         priority=calculate_priority(impact, urgency),
-        device="",
+        device=(conversation.device or "").strip()[:150],
         location="",
         status="Open",
         reporter_id=user.id,
@@ -321,9 +321,28 @@ def process_incoming_message(
                     )
                 else:
                     conversation.description = message_text
-                    conversation.step = "category"
+                    conversation.step = "device"
                     response_text = (
                         "✅ *Description saved.*\n"
+                        "What device is affected? For example, laptop, phone, "
+                        "or printer.\n"
+                        "Reply *Skip* if there isn’t a specific device."
+                    )
+            elif conversation.step == "device":
+                if normalized_text not in {"skip", "none", "n/a", "na"} and (
+                    len(message_text) > 150
+                ):
+                    response_text = (
+                        "Please keep the device name to 150 characters or fewer, "
+                        "or reply *Skip*."
+                    )
+                else:
+                    conversation.device = (
+                        "" if normalized_text in {"skip", "none", "n/a", "na"}
+                        else message_text
+                    )
+                    conversation.step = "category"
+                    response_text = (
                         "What category fits your issue best?\n\n"
                         + "\n".join(
                             f"{index}. {category}"

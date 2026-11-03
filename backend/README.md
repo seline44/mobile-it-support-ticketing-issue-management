@@ -64,7 +64,7 @@ Add these environment variables to the web service in the Render dashboard:
 
 Enter secret values directly in Render's environment settings. Do not put them
 in `render.yaml`, source code, or Git. The startup command creates any missing
-tables and applies the existing resolution and WhatsApp conversation-title
+tables and applies the existing resolution and WhatsApp conversation-field
 migrations before starting FastAPI. Use a service plan that remains available
 for production webhooks; free services can sleep and delay webhook responses.
 
@@ -144,8 +144,8 @@ The corresponding unlink endpoint is
 Administrator access token.
 
 WhatsApp ticket creation collects a separate title, full issue description,
-category, impact, and urgency. Device and location remain blank for WhatsApp
-tickets. The sender's WhatsApp number identifies the Reporter; an unlinked
+optional device, category, impact, and urgency. Location remains blank for
+WhatsApp tickets. The sender's WhatsApp number identifies the Reporter; an unlinked
 number gets a guest Reporter record, while an administrator can link a number
 to an existing Reporter account using the endpoint above. The ticket is saved
 to the same database as app-created tickets, appears as an unassigned Open

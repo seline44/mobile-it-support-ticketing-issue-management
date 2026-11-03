@@ -67,6 +67,7 @@ class WhatsAppConversation(Base):
     step: Mapped[str] = mapped_column(String(20))
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     description: Mapped[str] = mapped_column(Text)
+    device: Mapped[str | None] = mapped_column(String(150), nullable=True)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
     impact: Mapped[str | None] = mapped_column(String(30), nullable=True)
 

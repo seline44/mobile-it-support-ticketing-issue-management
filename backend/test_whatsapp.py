@@ -87,16 +87,17 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             self.send("wamid.1", "Lab Wi-Fi is unavailable"),
         )
         self.assertIn(
-            "category",
+            "device",
             self.send(
                 "wamid.2",
                 "I cannot connect to the lab Wi-Fi. I tried restarting "
                 "the laptop, but the issue continues.",
             ).casefold(),
         )
-        self.assertIn("affecting your work", self.send("wamid.3", "Network").casefold())
-        self.assertIn("resolved", self.send("wamid.4", "High").casefold())
-        response = self.send("wamid.5", "High")
+        self.assertIn("category", self.send("wamid.3", "Laptop").casefold())
+        self.assertIn("affecting your work", self.send("wamid.4", "Network").casefold())
+        self.assertIn("resolved", self.send("wamid.5", "High").casefold())
+        response = self.send("wamid.6", "High")
 
         ticket = self.db.query(Ticket).one()
         self.assertIn(ticket.ticket_number, response)
@@ -114,7 +115,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         self.assertEqual(ticket.urgency, "High")
         self.assertEqual(ticket.priority, "Critical")
         self.assertEqual(ticket.status, "Open")
-        self.assertEqual(ticket.device, "")
+        self.assertEqual(ticket.device, "Laptop")
         self.assertEqual(ticket.location, "")
         self.assertEqual(
             self.db.query(WhatsAppContact).filter_by(user_id=ticket.reporter_id)
@@ -130,16 +131,18 @@ class WhatsAppIntegrationTests(unittest.TestCase):
     def test_duplicate_webhook_message_does_not_create_duplicate_ticket(self):
         self.send("wamid.1", "Printer not responding")
         self.send("wamid.2", "The printer shows offline even after restart.")
-        self.send("wamid.3", "Printer")
-        self.send("wamid.4", "Medium")
-        first_response = self.send("wamid.5", "High")
+        self.send("wamid.3", "Skip")
+        self.send("wamid.4", "Printer")
+        self.send("wamid.5", "Medium")
+        first_response = self.send("wamid.6", "High")
         duplicate_response = self.send(
-            "wamid.5", "This content must not be processed twice."
+            "wamid.6", "This content must not be processed twice."
         )
 
         self.assertEqual(first_response, duplicate_response)
-        self.assertEqual(self.db.query(WhatsAppMessage).count(), 5)
+        self.assertEqual(self.db.query(WhatsAppMessage).count(), 6)
         self.assertEqual(self.db.query(Ticket).count(), 1)
+        self.assertEqual(self.db.query(Ticket).one().device, "")
 
     def test_sends_whatsapp_update_to_linked_reporter(self):
         ticket = Ticket(
@@ -224,11 +227,12 @@ class WhatsAppIntegrationTests(unittest.TestCase):
     def test_acknowledgement_after_ticket_does_not_start_another_conversation(self):
         self.send("wamid.1", "Wi-Fi connection issue")
         self.send("wamid.2", "I cannot access the campus Wi-Fi.")
-        self.send("wamid.3", "Network")
-        self.send("wamid.4", "High")
+        self.send("wamid.3", "Laptop")
+        self.send("wamid.4", "Network")
         self.send("wamid.5", "High")
+        self.send("wamid.6", "High")
 
-        response = self.send("wamid.6", "Okay")
+        response = self.send("wamid.7", "Okay")
 
         self.assertIn("short title", response)
         self.assertEqual(self.db.query(Ticket).count(), 1)
@@ -254,8 +258,9 @@ class WhatsAppIntegrationTests(unittest.TestCase):
     def test_account_category_accepts_short_name(self):
         self.send("wamid.account.1", "Cannot access my account")
         self.send("wamid.account.2", "I forgot my password and cannot log in.")
+        self.send("wamid.account.3", "Skip")
 
-        response = self.send("wamid.account.3", "Account")
+        response = self.send("wamid.account.4", "Account")
 
         conversation = self.db.query(WhatsAppConversation).one()
         self.assertEqual(conversation.category, "Account Access")

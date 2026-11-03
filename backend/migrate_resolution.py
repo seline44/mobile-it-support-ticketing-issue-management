@@ -15,8 +15,14 @@ with engine.begin() as connection:
             "ADD COLUMN IF NOT EXISTS title VARCHAR(200)"
         )
     )
+    connection.execute(
+        text(
+            "ALTER TABLE whatsapp_conversations "
+            "ADD COLUMN IF NOT EXISTS device VARCHAR(150)"
+        )
+    )
 
 print(
     "Database migration completed: tickets.resolution and "
-    "whatsapp_conversations.title are available."
+    "WhatsApp conversation title/device fields are available."
 )
