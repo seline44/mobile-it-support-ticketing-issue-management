@@ -188,7 +188,7 @@ def _create_ticket(
     urgency: str,
 ) -> Ticket:
     description = conversation.description.strip()
-    title = description.splitlines()[0].strip()[:200]
+    title = (conversation.title or description.splitlines()[0]).strip()[:200]
     ticket = Ticket(
         ticket_number=f"TD-{uuid4().hex[:8].upper()}",
         title=title,
@@ -286,24 +286,44 @@ def process_incoming_message(
                 if len(message_text) < 3 or normalized_text in GREETING_MESSAGES:
                     response_text = (
                         "👋 *Hi! I’m TriageDesk Support.*\n"
-                        "Tell me what’s going wrong with your IT, and I’ll guide "
-                        "you through creating a support ticket.\n\n"
+                        "Let’s create a support ticket together. First, send a "
+                        "short title for the IT issue (up to 200 characters).\n\n"
                         "You can send *CANCEL* anytime to stop."
                     )
-                elif len(message_text) > MAX_DESCRIPTION_LENGTH:
+                elif len(message_text) > 200:
                     response_text = (
-                        "That’s a little too much detail for one message. "
-                        "Please keep your issue description under 4,000 characters."
+                        "Please shorten the ticket title to 200 characters or "
+                        "fewer. You can share the full details in the next step."
                     )
                 else:
                     conversation = WhatsAppConversation(
                         phone_number=phone_number,
-                        step="category",
-                        description=message_text,
+                        step="description",
+                        title=message_text,
+                        description="",
                     )
                     db.add(conversation)
                     response_text = (
-                        "📝 *Got it!* Let’s get this to the right team.\n"
+                        f"📝 *Title:* {message_text}\n\n"
+                        "Now describe the issue in more detail. Include any "
+                        "error message and what you’ve already tried."
+                    )
+            elif conversation.step == "description":
+                if len(message_text) < 3:
+                    response_text = (
+                        "Please add a little more detail so the support team "
+                        "can understand the issue."
+                    )
+                elif len(message_text) > MAX_DESCRIPTION_LENGTH:
+                    response_text = (
+                        "Please keep the issue description to 4,000 characters "
+                        "or fewer."
+                    )
+                else:
+                    conversation.description = message_text
+                    conversation.step = "category"
+                    response_text = (
+                        "✅ *Description saved.*\n"
                         "What category fits your issue best?\n\n"
                         + "\n".join(
                             f"{index}. {category}"

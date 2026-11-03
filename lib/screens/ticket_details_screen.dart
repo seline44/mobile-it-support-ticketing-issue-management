@@ -15,6 +15,8 @@ class TicketDetailsScreen extends StatefulWidget {
   final String status;
   final String? resolution;
   final String? assignedTechnician;
+  final String? reporterName;
+  final String? reporterPhone;
   final DateTime? lastModifiedAt;
 
   const TicketDetailsScreen({
@@ -30,6 +32,8 @@ class TicketDetailsScreen extends StatefulWidget {
     required this.status,
     this.resolution,
     this.assignedTechnician,
+    this.reporterName,
+    this.reporterPhone,
     this.lastModifiedAt,
   });
 
@@ -480,6 +484,8 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     final priorityColor = _priorityColor();
     final isTechnician = ApiService.currentUser?['role'] == 'Technician';
     final isReporter = ApiService.currentUser?['role'] == 'Reporter';
+    final canViewRequester =
+        isTechnician || ApiService.currentUser?['role'] == 'Administrator';
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -654,6 +660,26 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                           textPrimary,
                           textSecondary,
                         ),
+                        if (canViewRequester &&
+                            (widget.reporterName?.isNotEmpty == true ||
+                                widget.reporterPhone?.isNotEmpty == true)) ...[
+                          const Divider(height: 20),
+                          _metaRow(
+                            'Requested by',
+                            widget.reporterName ?? 'WhatsApp requester',
+                            textPrimary,
+                            textSecondary,
+                          ),
+                          if (widget.reporterPhone?.isNotEmpty == true) ...[
+                            const Divider(height: 20),
+                            _metaRow(
+                              'WhatsApp',
+                              widget.reporterPhone!,
+                              textPrimary,
+                              textSecondary,
+                            ),
+                          ],
+                        ],
                       ],
                     ),
                   ),

@@ -9,6 +9,8 @@ class Ticket {
   final String priority;
   final String device;
   final String location;
+  final String? reporterName;
+  final String? reporterPhone;
   String status;
   final DateTime createdAt;
 
@@ -33,6 +35,8 @@ class Ticket {
     required this.location,
     required this.status,
     required this.createdAt,
+    this.reporterName,
+    this.reporterPhone,
     this.assignedTechnician,
     this.assignedTechnicianId,
     this.technicianNotes,
@@ -59,6 +63,8 @@ class Ticket {
       priority: json['priority']?.toString() ?? 'Medium',
       device: json['device']?.toString() ?? '',
       location: json['location']?.toString() ?? '',
+      reporterName: json['reporter_name']?.toString(),
+      reporterPhone: json['reporter_phone']?.toString(),
       status: json['status']?.toString() ?? 'Open',
       createdAt: DateTime.parse(json['created_at'].toString()),
       updatedAt: json['updated_at'] == null

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user, require_roles
 from database import get_db
-from models import Ticket, TicketHistory, TicketNote, User
+from models import Ticket, TicketHistory, TicketNote, User, WhatsAppContact
 from schemas import (
     NoteCreate,
     NoteResponse,
@@ -84,12 +84,23 @@ def record_history(
 
 
 def serialize_ticket(db: Session, ticket: Ticket) -> dict:
-    """Build a ticket response including technician and last-editor names."""
+    """Build a ticket response including requester and technician details."""
     assigned_name = None
     if ticket.assigned_technician_id is not None:
         technician = db.get(User, ticket.assigned_technician_id)
         if technician is not None:
             assigned_name = technician.full_name
+
+    reporter = db.get(User, ticket.reporter_id)
+    reporter_phone = None
+    if reporter is not None:
+        contact = (
+            db.query(WhatsAppContact)
+            .filter(WhatsAppContact.user_id == reporter.id)
+            .first()
+        )
+        if contact is not None:
+            reporter_phone = contact.phone_number
 
     last_history = (
         db.query(TicketHistory)
@@ -122,6 +133,8 @@ def serialize_ticket(db: Session, ticket: Ticket) -> dict:
         "status": ticket.status,
         "resolution": ticket.resolution,
         "reporter_id": ticket.reporter_id,
+        "reporter_name": reporter.full_name if reporter is not None else None,
+        "reporter_phone": reporter_phone,
         "assigned_technician_id": ticket.assigned_technician_id,
         "assigned_technician_name": assigned_name,
         "last_modified_by_name": last_editor_name,

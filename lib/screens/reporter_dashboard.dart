@@ -185,6 +185,8 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
           status: ticket.status,
           resolution: ticket.resolution,
           assignedTechnician: ticket.assignedTechnician,
+          reporterName: ticket.reporterName,
+          reporterPhone: ticket.reporterPhone,
           lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
         ),
       ),

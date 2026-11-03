@@ -40,6 +40,8 @@ Future<void> _openTicketDetails(
         status: ticket.status,
         resolution: ticket.resolution,
         assignedTechnician: ticket.assignedTechnician,
+        reporterName: ticket.reporterName,
+        reporterPhone: ticket.reporterPhone,
         lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
       ),
     ),

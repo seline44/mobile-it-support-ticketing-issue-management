@@ -13,6 +13,7 @@ from tickets import (
     list_ticket_history,
     list_ticket_notes,
     reopen_ticket,
+    serialize_ticket,
     update_ticket_status,
 )
 
@@ -141,6 +142,21 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertEqual(self.ticket.status, "In Progress")
         self.assertEqual(self.db.query(TicketHistory).count(), 0)
         self.assertEqual(self.db.query(TicketNote).count(), 0)
+
+    def test_ticket_details_include_whatsapp_requester_contact(self):
+        self.db.add(
+            WhatsAppContact(
+                phone_number="+254794045207",
+                user_id=self.reporter.id,
+                linked_by_user_id=self.admin.id,
+            )
+        )
+        self.db.commit()
+
+        result = serialize_ticket(self.db, self.ticket)
+
+        self.assertEqual(result["reporter_name"], "Ticket Reporter")
+        self.assertEqual(result["reporter_phone"], "+254794045207")
 
     def test_notifications_are_scoped_for_reporters_and_technicians(self):
         self.db.add(

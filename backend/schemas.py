@@ -30,6 +30,8 @@ class TicketResponse(BaseModel):
     status: str
     resolution: str | None = None
     reporter_id: int
+    reporter_name: str | None = None
+    reporter_phone: str | None = None
     assigned_technician_id: int | None
     assigned_technician_name: str | None = None
     last_modified_by_name: str | None = None
