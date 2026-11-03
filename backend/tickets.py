@@ -26,6 +26,7 @@ router = APIRouter(prefix="/tickets", tags=["Tickets"])
 VALID_IMPACTS = {"Low", "Medium", "High"}
 VALID_URGENCIES = {"Low", "Medium", "High"}
 VALID_STATUSES = {"Open", "In Progress", "Pending", "Resolved", "Closed"}
+WHATSAPP_NOTIFIED_STATUSES = {"Open", "In Progress", "Resolved"}
 
 
 def calculate_priority(impact: str, urgency: str) -> str:
@@ -41,6 +42,33 @@ def calculate_priority(impact: str, urgency: str) -> str:
         ("High", "High"): "Critical",
     }
     return scores[(impact, urgency)]
+
+
+def ticket_status_whatsapp_message(
+    ticket: Ticket,
+    status: str,
+    resolution: str | None = None,
+) -> str:
+    if status == "Open":
+        message = (
+            f"📬 *Ticket {ticket.ticket_number} is open.*\n"
+            "Your support request has been received and is waiting for a technician."
+        )
+    elif status == "In Progress":
+        message = (
+            f"🛠️ *Update on ticket {ticket.ticket_number}*\n"
+            "A technician has received your ticket and is working on it."
+        )
+    elif status == "Resolved":
+        message = (
+            f"✅ *Ticket {ticket.ticket_number} is resolved.*\n"
+            "Your support request has been marked as resolved."
+        )
+        if resolution:
+            message += f"\nResolution: {resolution}"
+    else:
+        raise ValueError(f"Unsupported WhatsApp notification status: {status}")
+    return message
 
 
 def get_ticket_or_404(db: Session, ticket_id: int) -> Ticket:
@@ -179,6 +207,11 @@ def create_ticket(
         )
         db.commit()
         db.refresh(ticket)
+        send_reporter_whatsapp_update(
+            db,
+            ticket,
+            ticket_status_whatsapp_message(ticket, "Open"),
+        )
         return serialize_ticket(db, ticket)
     except Exception:
         db.rollback()
@@ -331,8 +364,7 @@ def accept_ticket(
     send_reporter_whatsapp_update(
         db,
         ticket,
-        f"{user.full_name} accepted ticket {ticket.ticket_number} and is "
-        "working on it.",
+        ticket_status_whatsapp_message(ticket, "In Progress"),
     )
     return serialize_ticket(db, ticket)
 
@@ -419,16 +451,19 @@ def update_ticket_status(
         )
         db.commit()
         db.refresh(ticket)
-        if user.role == "Technician":
-            update_message = (
-                f"{user.full_name} updated ticket {ticket.ticket_number}: "
-                f"{old_status} -> {ticket.status}."
+        if (
+            old_status != ticket.status
+            and ticket.status in WHATSAPP_NOTIFIED_STATUSES
+        ):
+            send_reporter_whatsapp_update(
+                db,
+                ticket,
+                ticket_status_whatsapp_message(
+                    ticket,
+                    ticket.status,
+                    resolution,
+                ),
             )
-            if resolution:
-                update_message += f"\nResolution: {resolution}"
-            if note_text:
-                update_message += f"\nUpdate: {note_text}"
-            send_reporter_whatsapp_update(db, ticket, update_message)
         return serialize_ticket(db, ticket)
     except Exception:
         db.rollback()
@@ -480,6 +515,11 @@ def reopen_ticket(
 
     db.commit()
     db.refresh(ticket)
+    send_reporter_whatsapp_update(
+        db,
+        ticket,
+        ticket_status_whatsapp_message(ticket, "Open"),
+    )
     return serialize_ticket(db, ticket)
 
 

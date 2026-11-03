@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 
 from database import Base
 from models import Ticket, TicketHistory, TicketNote, User, WhatsAppContact
-from schemas import ReopenRequest, StatusUpdate
+from schemas import ReopenRequest, StatusUpdate, TicketCreate
 from tickets import (
+    accept_ticket,
+    create_ticket,
     list_notifications,
     list_ticket_history,
     list_ticket_notes,
@@ -158,6 +160,67 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertEqual(result["reporter_name"], "Ticket Reporter")
         self.assertEqual(result["reporter_phone"], "+254794045207")
 
+    def test_app_ticket_creation_sends_open_whatsapp_status(self):
+        self.db.add(
+            WhatsAppContact(
+                phone_number="+15551234567",
+                user_id=self.reporter.id,
+                linked_by_user_id=self.admin.id,
+            )
+        )
+        self.db.commit()
+
+        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+            result = create_ticket(
+                TicketCreate(
+                    title="Email is unavailable",
+                    description="I cannot access my email.",
+                    category="Email",
+                    impact="Medium",
+                    urgency="Medium",
+                ),
+                self.db,
+                self.reporter,
+            )
+
+        send_update.assert_called_once()
+        message = send_update.call_args.args[2]
+        self.assertIn("is open", message)
+        self.assertIn("waiting for a technician", message)
+        self.assertEqual(result["status"], "Open")
+
+    def test_accepting_ticket_sends_generic_in_progress_whatsapp(self):
+        self.db.add(
+            WhatsAppContact(
+                phone_number="+15551234567",
+                user_id=self.reporter.id,
+                linked_by_user_id=self.admin.id,
+            )
+        )
+        self.db.commit()
+        open_ticket = Ticket(
+            ticket_number="TD-OPEN-1",
+            title="Printer offline",
+            description="The printer is offline.",
+            category="Printer",
+            impact="Low",
+            urgency="Medium",
+            priority="Low",
+            status="Open",
+            reporter_id=self.reporter.id,
+        )
+        self.db.add(open_ticket)
+        self.db.commit()
+
+        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+            result = accept_ticket(open_ticket.id, self.db, self.technician)
+
+        send_update.assert_called_once()
+        message = send_update.call_args.args[2]
+        self.assertIn("A technician has received your ticket", message)
+        self.assertNotIn(self.technician.full_name, message)
+        self.assertEqual(result["status"], "In Progress")
+
     def test_notifications_are_scoped_for_reporters_and_technicians(self):
         self.db.add(
             TicketHistory(
@@ -243,23 +306,33 @@ class TicketCompletionTests(unittest.TestCase):
         send_update.assert_called_once()
         message = send_update.call_args.args[2]
         self.assertIn("TD-TEST-1", message)
-        self.assertIn("Resolved", message)
+        self.assertIn("resolved", message.casefold())
         self.assertIn("Replaced the faulty adapter.", message)
-        self.assertIn("Please test the connection again.", message)
+        self.assertNotIn(self.technician.full_name, message)
 
     def test_reporter_can_reopen_own_resolved_ticket_with_reason(self):
         self.ticket.status = "Resolved"
         self.ticket.resolution = "Replaced the network adapter."
         self.ticket.resolved_at = self.ticket.updated_at
+        self.db.add(
+            WhatsAppContact(
+                phone_number="+15551234567",
+                user_id=self.reporter.id,
+                linked_by_user_id=self.admin.id,
+            )
+        )
         self.db.commit()
 
-        result = reopen_ticket(
-            self.ticket.id,
-            ReopenRequest(reason="The network still disconnects."),
-            self.db,
-            self.reporter,
-        )
+        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+            result = reopen_ticket(
+                self.ticket.id,
+                ReopenRequest(reason="The network still disconnects."),
+                self.db,
+                self.reporter,
+            )
 
+        send_update.assert_called_once()
+        self.assertIn("is open", send_update.call_args.args[2])
         self.assertEqual(result["status"], "Open")
         self.assertEqual(
             result["resolution"],

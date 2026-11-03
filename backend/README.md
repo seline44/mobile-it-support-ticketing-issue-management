@@ -88,7 +88,10 @@ and the Phone Number ID and access token in the app's WhatsApp API setup. Keep
 all credentials private and configure them in Render's environment settings,
 not in source control. Incoming webhook signatures are validated using the App
 Secret. The same access token and Phone Number ID are used to send replies and
-ticket updates. The API version defaults to `v23.0`; set
+ticket updates. Linked WhatsApp Reporters receive status notifications when a
+ticket is opened, accepted and moved to In Progress, resolved, or reopened.
+Notifications refer to the support technician generically and do not reveal
+their name. The API version defaults to `v23.0`; set
 `META_GRAPH_API_VERSION` if your app uses another supported version.
 
 ## Twilio WhatsApp setup
