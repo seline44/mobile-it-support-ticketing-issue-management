@@ -63,10 +63,10 @@ Add these environment variables to the web service in the Render dashboard:
 | `TWILIO_WHATSAPP_FROM` | Optional; Twilio sender, e.g. `whatsapp:+15551234567` |
 
 Enter secret values directly in Render's environment settings. Do not put them
-in `render.yaml`, source code, or Git. The startup command creates any missing tables and applies the existing
-resolution-column migration before starting FastAPI. Use a service plan that
-remains available for production webhooks; free services can sleep and delay
-webhook responses.
+in `render.yaml`, source code, or Git. The startup command creates any missing
+tables and applies the existing resolution and WhatsApp conversation-title
+migrations before starting FastAPI. Use a service plan that remains available
+for production webhooks; free services can sleep and delay webhook responses.
 
 After deployment, verify the service's `/` endpoint responds. The WhatsApp
 webhook URL is
@@ -127,9 +127,9 @@ webhook:
 python init_db.py
 ```
 
-An administrator must link an active, approved Reporter to their WhatsApp
-number in international E.164 format (including `+`) before messages from that
-number can create tickets:
+To associate a WhatsApp number with an existing Reporter account, an
+administrator can link that active, approved Reporter using their phone number
+in international E.164 format (including `+`):
 
 ```http
 PUT /admin/users/{user_id}/whatsapp
@@ -143,11 +143,17 @@ The corresponding unlink endpoint is
 `DELETE /admin/users/{user_id}/whatsapp`. Both endpoints require an
 Administrator access token.
 
-Reporters can send a text message describing their issue. TriageDesk then
-collects category, impact, and urgency in the WhatsApp conversation, creates
-the ticket in the existing database, and replies with its ticket number and
-priority. Send `CANCEL` to stop an in-progress ticket conversation. Duplicate
-webhook deliveries from either provider are handled idempotently.
+WhatsApp ticket creation collects a separate title, full issue description,
+category, impact, and urgency. Device and location remain blank for WhatsApp
+tickets. The sender's WhatsApp number identifies the Reporter; an unlinked
+number gets a guest Reporter record, while an administrator can link a number
+to an existing Reporter account using the endpoint above. The ticket is saved
+to the same database as app-created tickets, appears as an unassigned Open
+ticket for technicians to accept, and its details expose the requester's name
+and WhatsApp number to technicians and administrators.
+
+Send `CANCEL` to stop an in-progress ticket conversation. Duplicate webhook
+deliveries from either provider are handled idempotently.
 
 The Administrator dashboard checks the WhatsApp ticket notification feed
 every 30 seconds and displays newly created WhatsApp tickets in its in-app

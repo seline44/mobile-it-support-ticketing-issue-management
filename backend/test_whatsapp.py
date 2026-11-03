@@ -83,7 +83,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
 
     def test_ticket_is_created_from_guided_conversation(self):
         self.assertIn(
-            "Description",
+            "describe the issue",
             self.send("wamid.1", "Lab Wi-Fi is unavailable"),
         )
         self.assertIn(
@@ -230,7 +230,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
 
         response = self.send("wamid.6", "Okay")
 
-        self.assertIn("Tell me what’s going wrong", response)
+        self.assertIn("short title", response)
         self.assertEqual(self.db.query(Ticket).count(), 1)
         self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
 
@@ -243,7 +243,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             "My account is locked.",
         )
 
-        self.assertIn("description", response.casefold())
+        self.assertIn("describe the issue", response.casefold())
         self.assertEqual(
             self.db.query(WhatsAppContact)
             .filter_by(phone_number="+15550000000")
