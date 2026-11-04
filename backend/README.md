@@ -163,12 +163,16 @@ After ticket creation, messages are added to the reporter's latest active
 ticket and appear for the support team. Send `NEW TICKET` to start another
 request. If a reporter says that a resolved issue is still not working, the bot
 asks before reopening the ticket. Greetings and thanks receive conversational
-replies without advancing an intake step. Technician and administrator work
-notes are internal. Reporters can see their submitted updates and the ticket's
-resolution; resolution text is also included in WhatsApp resolution updates.
+replies without advancing an intake step. A thank-you sent after a ticket is
+created is also added to that ticket's updates. Technicians and administrators
+can choose between private work notes and public replies; public replies appear
+in the reporter's ticket updates and are sent to WhatsApp. Reporters can see
+their submitted updates and the ticket's resolution; resolution text is also
+included in WhatsApp resolution updates.
 
 The Administrator dashboard checks the WhatsApp ticket notification feed
 every 30 seconds and displays newly created WhatsApp tickets in its in-app
 notifications and ticket list. Reporter and Technician dashboards also check
-ticket history notifications every 30 seconds, including tickets created via WhatsApp and reporter follow-ups.
-These are in-app notifications, not mobile push or email alerts.
+ticket history notifications every 30 seconds, including tickets created via
+WhatsApp and reporter follow-ups. These are in-app notifications, not mobile
+push or email alerts.

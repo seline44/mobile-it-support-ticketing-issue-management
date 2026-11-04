@@ -186,6 +186,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
   late String _status;
   String? _resolution;
   bool _isSavingStatus = false;
+  bool _commentIsInternal = true;
 
   @override
   void initState() {
@@ -450,7 +451,12 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
       return;
     }
     try {
-      await ApiService.addTicketNote(ticketId: ticketId, note: comment);
+      final isStaff = ApiService.currentUser?['role'] != 'Reporter';
+      await ApiService.addTicketNote(
+        ticketId: ticketId,
+        note: comment,
+        isInternal: isStaff ? _commentIsInternal : false,
+      );
       if (!mounted) return;
       _commentController.clear();
       await _loadHistory();
@@ -486,8 +492,8 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     final priorityColor = _priorityColor();
     final isTechnician = ApiService.currentUser?['role'] == 'Technician';
     final isReporter = ApiService.currentUser?['role'] == 'Reporter';
-    final isStaff = isTechnician ||
-        ApiService.currentUser?['role'] == 'Administrator';
+    final isStaff =
+        isTechnician || ApiService.currentUser?['role'] == 'Administrator';
     final canViewRequester =
         isTechnician || ApiService.currentUser?['role'] == 'Administrator';
 
@@ -850,52 +856,83 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
               color: cardColor,
               border: Border(top: BorderSide(color: borderColor)),
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _commentController,
-                    decoration: InputDecoration(
-                      hintText: isStaff
-                          ? 'Add an internal note (staff only)...'
-                          : 'Send an update to the support team...',
-                      filled: true,
-                      fillColor: theme.scaffoldBackgroundColor,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: borderColor),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: borderColor),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: blue, width: 1.5),
-                      ),
+                if (isStaff)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: DropdownButton<bool>(
+                      value: _commentIsInternal,
+                      underline: const SizedBox.shrink(),
+                      items: const [
+                        DropdownMenuItem(
+                          value: true,
+                          child: Text('Internal note · staff only'),
+                        ),
+                        DropdownMenuItem(
+                          value: false,
+                          child: Text('Public reply · reporter can see'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _commentIsInternal = value);
+                        }
+                      },
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Material(
-                  color: blue,
-                  borderRadius: BorderRadius.circular(24),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(24),
-                    onTap: _addComment,
-                    child: const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Icon(
-                        Icons.send_rounded,
-                        color: Colors.white,
-                        size: 20,
+                if (isStaff) const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _commentController,
+                        decoration: InputDecoration(
+                          hintText: isStaff && _commentIsInternal
+                              ? 'Add an internal note (staff only)...'
+                              : isStaff
+                              ? 'Write a reply to the reporter...'
+                              : 'Send an update to the support team...',
+                          filled: true,
+                          fillColor: theme.scaffoldBackgroundColor,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide(color: blue, width: 1.5),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Material(
+                      color: blue,
+                      borderRadius: BorderRadius.circular(24),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: _addComment,
+                        child: const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Icon(
+                            Icons.send_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

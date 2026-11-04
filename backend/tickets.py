@@ -584,12 +584,25 @@ def add_ticket_note(
     note_text = request.note.strip()
     if not note_text:
         raise HTTPException(status_code=422, detail="Note cannot be empty")
+    if user.role == "Reporter" and request.is_internal is True:
+        raise HTTPException(
+            status_code=403,
+            detail="Reporters cannot create internal notes",
+        )
+    if user.role not in {"Reporter", "Technician", "Administrator"}:
+        raise HTTPException(status_code=403, detail="Role not permitted")
 
     note = TicketNote(
         ticket_id=ticket.id,
         author_id=user.id,
         note=note_text,
-        is_internal=user.role in {"Technician", "Administrator"},
+        is_internal=(
+            False
+            if user.role == "Reporter"
+            else request.is_internal
+            if request.is_internal is not None
+            else True
+        ),
     )
 
     try:
@@ -604,6 +617,13 @@ def add_ticket_note(
         ticket.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(note)
+        if user.role in {"Technician", "Administrator"} and not note.is_internal:
+            send_reporter_whatsapp_update(
+                db,
+                ticket,
+                f"💬 Support team reply on ticket {ticket.ticket_number}:\n"
+                f"{note_text}",
+            )
         return note
     except Exception:
         db.rollback()

@@ -48,6 +48,7 @@ class StatusUpdate(BaseModel):
 
 class NoteCreate(BaseModel):
     note: str = Field(min_length=1, max_length=5000)
+    is_internal: bool | None = None
 
 
 class NoteResponse(BaseModel):

@@ -425,10 +425,7 @@ def process_incoming_message(
                         "Reply *YES* to reopen it or *NO* to leave it closed."
                     )
             elif conversation is not None and _is_thank_you(message_text):
-                response_text = (
-                    "You’re welcome! 😊 Whenever you’re ready, "
-                    + _ticket_intake_prompt(conversation.step)
-                )
+                response_text = "You’re welcome! 😊 Take your time."
             elif conversation is not None and _is_greeting(message_text):
                 response_text = (
                     "👋 Hi again! We’re picking up where we left off.\n"
@@ -445,10 +442,34 @@ def process_incoming_message(
                     .first()
                 )
                 if _is_thank_you(message_text):
-                    response_text = (
-                        "You’re very welcome! 😊 Message me anytime you need "
-                        "help with IT support."
-                    )
+                    if active_ticket is not None:
+                        db.add(
+                            TicketNote(
+                                ticket_id=active_ticket.id,
+                                author_id=user.id,
+                                note=message_text,
+                                is_internal=False,
+                            )
+                        )
+                        record_history(
+                            db,
+                            active_ticket,
+                            user.id,
+                            "Reporter WhatsApp follow-up",
+                            details="Reporter sent a WhatsApp follow-up.",
+                        )
+                        active_ticket.updated_at = datetime.now(timezone.utc)
+                        response_text = (
+                            f"You’re very welcome! 😊 I’ve added your message "
+                            f"to ticket *{active_ticket.ticket_number}* so the "
+                            "support team can see it. You can message here "
+                            "again anytime."
+                        )
+                    else:
+                        response_text = (
+                            "You’re very welcome! 😊 Message me anytime you "
+                            "need help with IT support."
+                        )
                 elif normalized_text in NEW_TICKET_MESSAGES:
                     conversation = WhatsAppConversation(
                         phone_number=phone_number,

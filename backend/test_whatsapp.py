@@ -238,6 +238,24 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
         self.assertEqual(self.db.query(TicketNote).count(), 0)
 
+    def test_thank_you_after_ticket_is_added_to_ticket_updates(self):
+        self.send("wamid.thank.ticket.1", "I cannot access the campus Wi-Fi.")
+        self.send("wamid.thank.ticket.2", "Network")
+        self.send("wamid.thank.ticket.3", "Laptop")
+        self.send("wamid.thank.ticket.4", "High")
+        self.send("wamid.thank.ticket.5", "High")
+        ticket = self.db.query(Ticket).one()
+
+        response = self.send("wamid.thank.ticket.6", "Thank you!")
+
+        update = self.db.query(TicketNote).one()
+        self.assertEqual(update.ticket_id, ticket.id)
+        self.assertEqual(update.note, "Thank you!")
+        self.assertFalse(update.is_internal)
+        self.assertIn(ticket.ticket_number, response)
+        self.assertIn("support team can see it", response)
+        self.assertEqual(self.db.query(Ticket).count(), 1)
+
     def test_greeting_is_friendly_and_does_not_start_an_incomplete_ticket(self):
         response = self.send("wamid.greeting", "Hello, I need help")
 
@@ -252,7 +270,20 @@ class WhatsAppIntegrationTests(unittest.TestCase):
 
         conversation = self.db.query(WhatsAppConversation).one()
         self.assertEqual(conversation.step, "category")
-        self.assertIn("category", response.casefold())
+        self.assertIn("you’re welcome", response.casefold())
+        self.assertNotIn("category", response.casefold())
+        self.assertEqual(self.db.query(Ticket).count(), 0)
+
+    def test_thanks_during_device_step_does_not_repeat_device_prompt(self):
+        self.send("wamid.thanks.device.1", "My laptop cannot connect to Wi-Fi.")
+        self.send("wamid.thanks.device.2", "Network")
+
+        response = self.send("wamid.thanks.device.3", "Thank you!")
+
+        conversation = self.db.query(WhatsAppConversation).one()
+        self.assertEqual(conversation.step, "device")
+        self.assertIn("you’re welcome", response.casefold())
+        self.assertNotIn("device", response.casefold())
         self.assertEqual(self.db.query(Ticket).count(), 0)
 
     def test_follow_up_is_attached_to_the_latest_active_ticket(self):

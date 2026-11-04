@@ -229,11 +229,14 @@ class ApiService {
   static Future<Map<String, dynamic>> addTicketNote({
     required int ticketId,
     required String note,
+    bool? isInternal,
   }) async {
+    final body = <String, dynamic>{'note': note};
+    if (isInternal != null) body['is_internal'] = isInternal;
     final response = await http.post(
       Uri.parse('$baseUrl/tickets/$ticketId/notes'),
       headers: _headers,
-      body: jsonEncode({'note': note}),
+      body: jsonEncode(body),
     );
 
     final decoded = _decode(response);

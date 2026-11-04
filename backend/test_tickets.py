@@ -184,6 +184,57 @@ class TicketCompletionTests(unittest.TestCase):
             ["The error appeared again.", "Checking the device logs."],
         )
 
+    def test_technician_can_send_public_reply_to_reporter(self):
+        from schemas import NoteCreate
+        from tickets import add_ticket_note
+
+        self.db.add(
+            WhatsAppContact(
+                phone_number="+15551234567",
+                user_id=self.reporter.id,
+                linked_by_user_id=self.admin.id,
+            )
+        )
+        self.db.commit()
+
+        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+            reply = add_ticket_note(
+                self.ticket.id,
+                NoteCreate(
+                    note="Please try signing in again.",
+                    is_internal=False,
+                ),
+                self.db,
+                self.technician,
+            )
+
+        send_update.assert_called_once()
+        self.assertIn("Support team reply", send_update.call_args.args[2])
+        self.assertIn("Please try signing in again.", send_update.call_args.args[2])
+        self.assertFalse(reply.is_internal)
+        reporter_notes = list_ticket_notes(
+            self.ticket.id, self.db, self.reporter
+        )
+        self.assertEqual(
+            [note["note"] for note in reporter_notes],
+            ["Please try signing in again."],
+        )
+
+    def test_reporter_cannot_create_an_internal_note(self):
+        from schemas import NoteCreate
+        from tickets import add_ticket_note
+
+        with self.assertRaises(HTTPException) as error:
+            add_ticket_note(
+                self.ticket.id,
+                NoteCreate(note="Hidden note", is_internal=True),
+                self.db,
+                self.reporter,
+            )
+
+        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(self.db.query(TicketNote).count(), 0)
+
     def test_ticket_details_include_whatsapp_requester_contact(self):
         self.db.add(
             WhatsAppContact(
