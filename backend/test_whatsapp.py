@@ -286,6 +286,23 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         self.assertNotIn("device", response.casefold())
         self.assertEqual(self.db.query(Ticket).count(), 0)
 
+    def test_long_greeting_during_intake_does_not_fail_current_step(self):
+        self.send("wamid.greeting.impact.1", "My printer is offline.")
+        self.send("wamid.greeting.impact.2", "Printer")
+        self.send("wamid.greeting.impact.3", "Office printer")
+
+        response = self.send(
+            "wamid.greeting.impact.4",
+            "Hi, I need help with an IT issue.",
+        )
+
+        conversation = self.db.query(WhatsAppConversation).one()
+        self.assertEqual(conversation.step, "impact")
+        self.assertIn("Hi again", response)
+        self.assertIn("affecting your work", response)
+        self.assertNotIn("Please choose how much work is affected", response)
+        self.assertEqual(self.db.query(Ticket).count(), 0)
+
     def test_follow_up_is_attached_to_the_latest_active_ticket(self):
         tickets = [
             Ticket(

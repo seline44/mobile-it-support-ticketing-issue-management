@@ -100,7 +100,8 @@ def _is_greeting(message: str) -> bool:
     return bool(
         re.fullmatch(
             r"(?:hi|hello|hey|good morning|good afternoon|good evening)"
-            r"[, ]+(?:i need help|can you help(?: me)?|please help|help me)",
+            r"[, ]+(?:i need help|can you help(?: me)?|please help|help me)"
+            r"(?:\s+with\b.*)?",
             normalized,
         )
     )
