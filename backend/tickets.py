@@ -59,10 +59,10 @@ def ticket_status_whatsapp_message(
             f"🛠️ *Update on ticket {ticket.ticket_number}*\n"
             "A technician has received your ticket and is working on it."
         )
-    elif status == "Resolved":
+    elif status in {"Resolved", "Closed"}:
         message = (
-            f"✅ *Ticket {ticket.ticket_number} is resolved.*\n"
-            "Your support request has been marked as resolved."
+            f"✅ *Ticket {ticket.ticket_number} is {status.casefold()}.*\n"
+            "Here’s the resolution to your request:"
         )
         if resolution:
             message += f"\nResolution: {resolution}"
@@ -420,6 +420,7 @@ def update_ticket_status(
         raise HTTPException(status_code=422, detail="Note cannot be empty")
 
     old_status = ticket.status
+    old_resolution = ticket.resolution
     now = datetime.now(timezone.utc)
     ticket.status = request.status
     ticket.updated_at = now
@@ -438,6 +439,7 @@ def update_ticket_status(
         else "Status changed"
     )
 
+    whatsapp_notification_sent = None
     try:
         if note_text:
             db.add(
@@ -460,19 +462,26 @@ def update_ticket_status(
         db.commit()
         db.refresh(ticket)
         if (
-            old_status != ticket.status
-            and ticket.status in WHATSAPP_NOTIFIED_STATUSES
-        ):
-            send_reporter_whatsapp_update(
-                db,
-                ticket,
-                ticket_status_whatsapp_message(
-                    ticket,
-                    ticket.status,
-                    resolution,
-                ),
+            ticket.status in WHATSAPP_NOTIFIED_STATUSES | {"Closed"}
+            and (
+                old_status != ticket.status
+                or old_resolution != ticket.resolution
             )
-        return serialize_ticket(db, ticket)
+        ):
+            whatsapp_notification_sent = bool(
+                send_reporter_whatsapp_update(
+                    db,
+                    ticket,
+                    ticket_status_whatsapp_message(
+                        ticket,
+                        ticket.status,
+                        resolution,
+                    ),
+                )
+            )
+        result = serialize_ticket(db, ticket)
+        result["whatsapp_notification_sent"] = whatsapp_notification_sent
+        return result
     except Exception:
         db.rollback()
         raise
@@ -605,6 +614,7 @@ def add_ticket_note(
         ),
     )
 
+    whatsapp_notification_sent = None
     try:
         db.add(note)
         record_history(
@@ -618,13 +628,18 @@ def add_ticket_note(
         db.commit()
         db.refresh(note)
         if user.role in {"Technician", "Administrator"} and not note.is_internal:
-            send_reporter_whatsapp_update(
-                db,
-                ticket,
-                f"💬 Support team reply on ticket {ticket.ticket_number}:\n"
-                f"{note_text}",
+            whatsapp_notification_sent = bool(
+                send_reporter_whatsapp_update(
+                    db,
+                    ticket,
+                    f"💬 Support team reply on ticket {ticket.ticket_number}:\n"
+                    f"{note_text}",
+                )
             )
-        return note
+        response = NoteResponse.model_validate(note)
+        return response.model_copy(
+            update={"whatsapp_notification_sent": whatsapp_notification_sent}
+        )
     except Exception:
         db.rollback()
         raise

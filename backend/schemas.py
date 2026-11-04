@@ -39,6 +39,7 @@ class TicketResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     resolved_at: datetime | None
+    whatsapp_notification_sent: bool | None = None
 
 
 class StatusUpdate(BaseModel):
@@ -61,6 +62,7 @@ class NoteResponse(BaseModel):
     note: str
     is_internal: bool
     created_at: datetime
+    whatsapp_notification_sent: bool | None = None
 
 class ReopenRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=2000)

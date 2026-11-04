@@ -82,23 +82,16 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             body,
         )
 
-    def test_ticket_is_created_from_guided_conversation(self):
-        self.assertIn(
-            "category",
-            self.send(
-                "wamid.1",
-                "I cannot connect to the lab Wi-Fi. I tried restarting "
-                "the laptop, but the issue continues.",
-            ).casefold(),
+    def test_issue_description_creates_ticket_immediately(self):
+        response = self.send(
+            "wamid.1",
+            "I cannot connect to the lab Wi-Fi. I tried restarting "
+            "the laptop, but the issue continues.",
         )
-        self.assertIn("device", self.send("wamid.2", "Network").casefold())
-        self.assertIn("affecting your work", self.send("wamid.3", "Laptop").casefold())
-        self.assertIn("resolved", self.send("wamid.4", "High").casefold())
-        response = self.send("wamid.5", "High")
 
         ticket = self.db.query(Ticket).one()
         self.assertIn(ticket.ticket_number, response)
-        self.assertIn("Your support ticket is in", response)
+        self.assertIn("logged your issue", response)
         self.assertIn("Priority", response)
         self.assertEqual(
             ticket.title,
@@ -112,11 +105,11 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(ticket.reporter_id, self.reporter.id)
         self.assertEqual(ticket.category, "Network")
-        self.assertEqual(ticket.impact, "High")
-        self.assertEqual(ticket.urgency, "High")
-        self.assertEqual(ticket.priority, "Critical")
+        self.assertEqual(ticket.impact, "Medium")
+        self.assertEqual(ticket.urgency, "Medium")
+        self.assertEqual(ticket.priority, "Medium")
         self.assertEqual(ticket.status, "Open")
-        self.assertEqual(ticket.device, "Laptop")
+        self.assertEqual(ticket.device, "")
         self.assertEqual(ticket.location, "")
         self.assertEqual(
             self.db.query(WhatsAppContact).filter_by(user_id=ticket.reporter_id)
@@ -129,20 +122,65 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             "Ticket created via WhatsApp",
         )
 
+    def test_issue_without_matching_category_uses_other_and_default_levels(self):
+        response = self.send(
+            "wamid.other",
+            "The classroom projector remote is missing.",
+        )
+
+        ticket = self.db.query(Ticket).one()
+        self.assertIn(ticket.ticket_number, response)
+        self.assertEqual(ticket.category, "Other")
+        self.assertEqual(ticket.impact, "Medium")
+        self.assertEqual(ticket.urgency, "Medium")
+
+    def test_new_ticket_command_accepts_description_in_same_message(self):
+        response = self.send(
+            "wamid.new-ticket-description",
+            "NEW TICKET: The printer says its PIN is invalid.",
+        )
+
+        ticket = self.db.query(Ticket).one()
+        self.assertEqual(
+            ticket.description,
+            "The printer says its PIN is invalid.",
+        )
+        self.assertEqual(ticket.category, "Printer")
+        self.assertIn(ticket.ticket_number, response)
+        self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
+
+    def test_new_ticket_command_asks_only_for_missing_description(self):
+        response = self.send("wamid.new-ticket", "NEW TICKET")
+
+        self.assertIn("what’s happening", response.casefold())
+        self.assertEqual(self.db.query(Ticket).count(), 0)
+        self.assertEqual(
+            self.db.query(WhatsAppConversation).one().step,
+            "description",
+        )
+
+        response = self.send(
+            "wamid.new-ticket-description",
+            "The printer says its PIN is invalid.",
+        )
+        self.assertIn("Ticket:", response)
+        self.assertEqual(self.db.query(Ticket).one().category, "Printer")
+        self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
+
     def test_duplicate_webhook_message_does_not_create_duplicate_ticket(self):
-        self.send("wamid.1", "The printer shows offline even after restart.")
-        self.send("wamid.2", "Printer")
-        self.send("wamid.3", "Skip")
-        self.send("wamid.4", "Medium")
-        first_response = self.send("wamid.5", "High")
+        first_response = self.send(
+            "wamid.1",
+            "The printer shows offline even after restart.",
+        )
         duplicate_response = self.send(
-            "wamid.5", "This content must not be processed twice."
+            "wamid.1", "This content must not be processed twice."
         )
 
         self.assertEqual(first_response, duplicate_response)
-        self.assertEqual(self.db.query(WhatsAppMessage).count(), 5)
+        self.assertEqual(self.db.query(WhatsAppMessage).count(), 1)
         self.assertEqual(self.db.query(Ticket).count(), 1)
         self.assertEqual(self.db.query(Ticket).one().device, "")
+        self.assertEqual(self.db.query(Ticket).one().category, "Printer")
 
     def test_sends_whatsapp_update_to_linked_reporter(self):
         ticket = Ticket(
@@ -226,12 +264,8 @@ class WhatsAppIntegrationTests(unittest.TestCase):
 
     def test_acknowledgement_after_ticket_does_not_start_another_conversation(self):
         self.send("wamid.1", "I cannot access the campus Wi-Fi.")
-        self.send("wamid.2", "Network")
-        self.send("wamid.3", "Laptop")
-        self.send("wamid.4", "High")
-        self.send("wamid.5", "High")
 
-        response = self.send("wamid.6", "Okay")
+        response = self.send("wamid.2", "Okay")
 
         self.assertIn("ticket", response.casefold())
         self.assertEqual(self.db.query(Ticket).count(), 1)
@@ -239,11 +273,10 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         self.assertEqual(self.db.query(TicketNote).count(), 0)
 
     def test_thank_you_after_ticket_is_added_to_ticket_updates(self):
-        self.send("wamid.thank.ticket.1", "I cannot access the campus Wi-Fi.")
-        self.send("wamid.thank.ticket.2", "Network")
-        self.send("wamid.thank.ticket.3", "Laptop")
-        self.send("wamid.thank.ticket.4", "High")
-        self.send("wamid.thank.ticket.5", "High")
+        self.send(
+            "wamid.thank.ticket.1",
+            "I cannot access the campus Wi-Fi.",
+        )
         ticket = self.db.query(Ticket).one()
 
         response = self.send("wamid.thank.ticket.6", "Thank you!")
@@ -263,45 +296,87 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         self.assertEqual(self.db.query(Ticket).count(), 0)
         self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
 
-    def test_thanks_during_intake_keeps_the_current_step(self):
-        self.send("wamid.thanks.1", "My laptop cannot connect to Wi-Fi.")
-
-        response = self.send("wamid.thanks.2", "Thank you")
-
-        conversation = self.db.query(WhatsAppConversation).one()
-        self.assertEqual(conversation.step, "category")
-        self.assertIn("you’re welcome", response.casefold())
-        self.assertNotIn("category", response.casefold())
-        self.assertEqual(self.db.query(Ticket).count(), 0)
-
-    def test_thanks_during_device_step_does_not_repeat_device_prompt(self):
-        self.send("wamid.thanks.device.1", "My laptop cannot connect to Wi-Fi.")
-        self.send("wamid.thanks.device.2", "Network")
-
-        response = self.send("wamid.thanks.device.3", "Thank you!")
-
-        conversation = self.db.query(WhatsAppConversation).one()
-        self.assertEqual(conversation.step, "device")
-        self.assertIn("you’re welcome", response.casefold())
-        self.assertNotIn("device", response.casefold())
-        self.assertEqual(self.db.query(Ticket).count(), 0)
-
-    def test_long_greeting_during_intake_does_not_fail_current_step(self):
-        self.send("wamid.greeting.impact.1", "My printer is offline.")
-        self.send("wamid.greeting.impact.2", "Printer")
-        self.send("wamid.greeting.impact.3", "Office printer")
-
+    def test_greeting_with_a_specific_problem_creates_ticket_immediately(self):
         response = self.send(
-            "wamid.greeting.impact.4",
+            "wamid.greeting.problem",
+            "Hi, I need help with my printer PIN not working.",
+        )
+
+        ticket = self.db.query(Ticket).one()
+        self.assertIn(ticket.ticket_number, response)
+        self.assertEqual(ticket.category, "Printer")
+        self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
+
+    def test_generic_greeting_does_not_create_ticket_without_issue_details(self):
+        response = self.send(
+            "wamid.greeting.generic",
             "Hi, I need help with an IT issue.",
         )
 
-        conversation = self.db.query(WhatsAppConversation).one()
-        self.assertEqual(conversation.step, "impact")
-        self.assertIn("Hi again", response)
-        self.assertIn("affecting your work", response)
-        self.assertNotIn("Please choose how much work is affected", response)
+        self.assertIn("describe", response.casefold())
         self.assertEqual(self.db.query(Ticket).count(), 0)
+
+    def test_thanks_finishes_a_preexisting_long_intake_from_saved_description(self):
+        self.db.add(
+            WhatsAppConversation(
+                phone_number="+15551234567",
+                step="category",
+                description="My laptop cannot connect to Wi-Fi.",
+            )
+        )
+        self.db.commit()
+
+        response = self.send("wamid.thanks.1", "Thank you")
+
+        ticket = self.db.query(Ticket).one()
+        self.assertEqual(ticket.description, "My laptop cannot connect to Wi-Fi.")
+        self.assertEqual(ticket.category, "Network")
+        self.assertIn("you’re welcome", response.casefold())
+        self.assertIn(ticket.ticket_number, response)
+        self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
+
+    def test_thanks_during_old_device_step_does_not_ask_for_more_details(self):
+        self.db.add(
+            WhatsAppConversation(
+                phone_number="+15551234567",
+                step="device",
+                description="My laptop cannot connect to Wi-Fi.",
+                category="Network",
+            )
+        )
+        self.db.commit()
+
+        response = self.send("wamid.thanks.device.1", "Thank you!")
+
+        ticket = self.db.query(Ticket).one()
+        self.assertEqual(ticket.description, "My laptop cannot connect to Wi-Fi.")
+        self.assertIn("you’re welcome", response.casefold())
+        self.assertIn(ticket.ticket_number, response)
+        self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
+
+    def test_long_greeting_completes_old_intake_without_repeating_form(self):
+        self.db.add(
+            WhatsAppConversation(
+                phone_number="+15551234567",
+                step="impact",
+                description="My printer is offline.",
+                category="Printer",
+                device="Office printer",
+            )
+        )
+        self.db.commit()
+
+        response = self.send(
+            "wamid.greeting.impact.1",
+            "Hi, I need help with an IT issue.",
+        )
+
+        ticket = self.db.query(Ticket).one()
+        self.assertEqual(ticket.description, "My printer is offline.")
+        self.assertEqual(ticket.category, "Printer")
+        self.assertIn(ticket.ticket_number, response)
+        self.assertNotIn("affecting your work", response)
+        self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
 
     def test_follow_up_is_attached_to_the_latest_active_ticket(self):
         tickets = [
@@ -380,23 +455,26 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             "My account is locked.",
         )
 
-        self.assertIn("category", response.casefold())
+        self.assertIn("Ticket:", response)
         self.assertEqual(
             self.db.query(WhatsAppContact)
             .filter_by(phone_number="+15550000000")
             .count(),
             1,
         )
+        self.assertEqual(self.db.query(Ticket).one().category, "Account Access")
 
     def test_account_category_accepts_short_name(self):
-        self.send("wamid.account.1", "I forgot my password and cannot log in.")
+        response = self.send(
+            "wamid.account.1",
+            "I forgot my password and cannot log in.",
+        )
 
-        response = self.send("wamid.account.2", "Account")
-
-        conversation = self.db.query(WhatsAppConversation).one()
-        self.assertEqual(conversation.category, "Account Access")
         self.assertIn("Account Access", response)
-        self.assertIn("device", response.casefold())
+        self.assertEqual(
+            self.db.query(Ticket).one().category,
+            "Account Access",
+        )
 
     def test_webhook_signature_matches_twilio_request_validator(self):
         url = "https://example.test/webhooks/whatsapp"
@@ -532,15 +610,13 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             self.db.get(WhatsAppMessage, "wamid.meta1").phone_number,
             "+15551234567",
         )
-        send_message.assert_called_once_with(
-            "123456",
-            "15551234567",
-            "📝 *Issue description saved.*\n"
-            "What category fits your issue best?\n\n"
-            "1. Network\n2. Hardware\n3. Software\n4. Email\n"
-            "5. Account Access\n6. Printer\n7. Other\n\n"
-            "Reply with a category name or number.",
+        send_message.assert_called_once()
+        self.assertEqual(
+            send_message.call_args.args[:2],
+            ("123456", "15551234567"),
         )
+        self.assertIn("Ticket:", send_message.call_args.args[2])
+        self.assertEqual(self.db.query(Ticket).one().category, "Printer")
 
     def test_twiml_response_contains_reply_message(self):
         response = whatsapp_twiml_response("Ticket created.")
@@ -586,10 +662,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             result = asyncio.run(receive_webhook(request, self.db))
 
         self.assertEqual(result.media_type, "application/xml")
-        self.assertIn(
-            "<Message>📝 *Issue description saved.*",
-            result.body.decode(),
-        )
+        self.assertIn("<Message>🎉 *Thanks—I’ve logged your issue.*", result.body.decode())
         self.assertEqual(
             self.db.get(WhatsAppMessage, "SM123").phone_number,
             "+15551234567",

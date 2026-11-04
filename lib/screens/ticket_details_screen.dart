@@ -186,7 +186,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
   late String _status;
   String? _resolution;
   bool _isSavingStatus = false;
-  bool _commentIsInternal = true;
+  bool _commentIsInternal = false;
 
   @override
   void initState() {
@@ -366,9 +366,15 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
       });
       await _loadHistory();
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Ticket $_status successfully.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            updated['whatsapp_notification_sent'] == false
+                ? 'Ticket $_status, but WhatsApp could not send the update. Check the reporter’s linked number and backend delivery logs.'
+                : 'Ticket $_status successfully.',
+          ),
+        ),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -452,7 +458,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     }
     try {
       final isStaff = ApiService.currentUser?['role'] != 'Reporter';
-      await ApiService.addTicketNote(
+      final result = await ApiService.addTicketNote(
         ticketId: ticketId,
         note: comment,
         isInternal: isStaff ? _commentIsInternal : false,
@@ -462,8 +468,14 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
       await _loadHistory();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Comment added successfully'),
+        SnackBar(
+          content: Text(
+            isStaff &&
+                    !_commentIsInternal &&
+                    result['whatsapp_notification_sent'] == false
+                ? 'Reply saved, but WhatsApp could not send it. Check the reporter’s linked number and backend delivery logs.'
+                : 'Comment added successfully',
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );

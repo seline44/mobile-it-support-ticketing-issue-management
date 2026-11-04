@@ -89,6 +89,7 @@ class TicketCompletionTests(unittest.TestCase):
                 )
 
                 self.assertEqual(result["status"], status)
+                self.assertFalse(result["whatsapp_notification_sent"])
                 self.assertEqual(
                     result["resolution"],
                     "Replaced the faulty power adapter.",
@@ -198,6 +199,7 @@ class TicketCompletionTests(unittest.TestCase):
         self.db.commit()
 
         with patch("tickets.send_reporter_whatsapp_update") as send_update:
+            send_update.return_value = True
             reply = add_ticket_note(
                 self.ticket.id,
                 NoteCreate(
@@ -212,6 +214,7 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertIn("Support team reply", send_update.call_args.args[2])
         self.assertIn("Please try signing in again.", send_update.call_args.args[2])
         self.assertFalse(reply.is_internal)
+        self.assertTrue(reply.whatsapp_notification_sent)
         reporter_notes = list_ticket_notes(
             self.ticket.id, self.db, self.reporter
         )
@@ -393,7 +396,8 @@ class TicketCompletionTests(unittest.TestCase):
         self.db.commit()
 
         with patch("tickets.send_reporter_whatsapp_update") as send_update:
-            update_ticket_status(
+            send_update.return_value = True
+            result = update_ticket_status(
                 self.ticket.id,
                 StatusUpdate(
                     status="Resolved",
@@ -404,6 +408,7 @@ class TicketCompletionTests(unittest.TestCase):
                 self.technician,
             )
 
+        self.assertTrue(result["whatsapp_notification_sent"])
         send_update.assert_called_once()
         message = send_update.call_args.args[2]
         self.assertIn("TD-TEST-1", message)
@@ -411,6 +416,63 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertIn("Replaced the faulty adapter.", message)
         self.assertNotIn("Please test the connection again.", message)
         self.assertNotIn(self.technician.full_name, message)
+
+    def test_updating_resolution_on_already_resolved_ticket_sends_whatsapp(self):
+        self.ticket.status = "Resolved"
+        self.ticket.resolution = "Initial resolution."
+        self.ticket.resolved_at = self.ticket.updated_at
+        self.db.add(
+            WhatsAppContact(
+                phone_number="+15551234567",
+                user_id=self.reporter.id,
+                linked_by_user_id=self.admin.id,
+            )
+        )
+        self.db.commit()
+
+        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+            send_update.return_value = True
+            result = update_ticket_status(
+                self.ticket.id,
+                StatusUpdate(
+                    status="Resolved",
+                    resolution="Updated resolution instructions.",
+                ),
+                self.db,
+                self.admin,
+            )
+
+        self.assertTrue(result["whatsapp_notification_sent"])
+        send_update.assert_called_once()
+        self.assertIn("Updated resolution instructions.", send_update.call_args.args[2])
+
+    def test_closed_ticket_sends_resolution_to_linked_reporter(self):
+        self.db.add(
+            WhatsAppContact(
+                phone_number="+15551234567",
+                user_id=self.reporter.id,
+                linked_by_user_id=self.admin.id,
+            )
+        )
+        self.db.commit()
+
+        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+            send_update.return_value = True
+            result = update_ticket_status(
+                self.ticket.id,
+                StatusUpdate(
+                    status="Closed",
+                    resolution="Reinstalled the printer driver.",
+                ),
+                self.db,
+                self.admin,
+            )
+
+        self.assertTrue(result["whatsapp_notification_sent"])
+        send_update.assert_called_once()
+        message = send_update.call_args.args[2]
+        self.assertIn("closed", message.casefold())
+        self.assertIn("Reinstalled the printer driver.", message)
 
     def test_reporter_can_reopen_own_resolved_ticket_with_reason(self):
         self.ticket.status = "Resolved"

@@ -93,6 +93,11 @@ ticket is opened, accepted and moved to In Progress, resolved, or reopened.
 Notifications refer to the support technician generically and do not reveal
 their name. The API version defaults to `v23.0`; set
 `META_GRAPH_API_VERSION` if your app uses another supported version.
+Free-form outbound messages can be restricted by Meta's 24-hour customer
+service window. For messages sent outside that window, Meta may require an
+approved message template. The ticket update response indicates whether the
+provider accepted the send request; check backend logs for provider rejection
+details, since acceptance is not a delivery receipt.
 
 ## Twilio WhatsApp setup
 
@@ -146,10 +151,15 @@ The corresponding unlink endpoint is
 `DELETE /admin/users/{user_id}/whatsapp`. Both endpoints require an
 Administrator access token.
 
-WhatsApp ticket creation starts by collecting the issue description, then asks
-for category, optional device, impact, and urgency. The ticket title is derived
-from the description. Location remains blank for WhatsApp tickets. The sender's
-WhatsApp number identifies the Reporter; an unlinked
+WhatsApp ticket creation uses a short issue description as the only required
+input. When the message includes enough detail, a ticket is created immediately;
+the category is inferred from common issue keywords, with `Other` used if no
+category matches. Impact and urgency default to `Medium`; device and location
+are left blank for WhatsApp-created tickets. The ticket title is derived
+from the description. A greeting without issue details gets a single short
+prompt; a greeting with a concrete issue creates a ticket immediately. Send
+`NEW TICKET: <description>` to create another ticket while an existing one is
+active. The sender's WhatsApp number identifies the Reporter; an unlinked
 number gets a guest Reporter record, while an administrator can link a number
 to an existing Reporter account using the endpoint above. The ticket is saved
 to the same database as app-created tickets, appears as an unassigned Open

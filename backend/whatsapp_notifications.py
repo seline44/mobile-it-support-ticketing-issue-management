@@ -21,6 +21,11 @@ def send_reporter_whatsapp_update(
         .first()
     )
     if contact is None:
+        logger.warning(
+            "WhatsApp update for %s was not sent: reporter has no linked "
+            "WhatsApp number.",
+            ticket.ticket_number,
+        )
         return False
 
     meta_access_token = os.getenv("META_ACCESS_TOKEN")
