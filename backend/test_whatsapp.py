@@ -285,8 +285,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         self.assertEqual(update.ticket_id, ticket.id)
         self.assertEqual(update.note, "Thank you!")
         self.assertFalse(update.is_internal)
-        self.assertIn(ticket.ticket_number, response)
-        self.assertIn("support team can see it", response)
+        self.assertEqual(response, "You’re very welcome! 😊")
         self.assertEqual(self.db.query(Ticket).count(), 1)
 
     def test_greeting_is_friendly_and_does_not_start_an_incomplete_ticket(self):

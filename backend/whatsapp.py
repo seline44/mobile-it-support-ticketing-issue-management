@@ -545,12 +545,7 @@ def process_incoming_message(
                             details="Reporter sent a WhatsApp follow-up.",
                         )
                         active_ticket.updated_at = datetime.now(timezone.utc)
-                        response_text = (
-                            f"You’re very welcome! 😊 I’ve added your message "
-                            f"to ticket *{active_ticket.ticket_number}* so the "
-                            "support team can see it. You can message here "
-                            "again anytime."
-                        )
+                        response_text = "You’re very welcome! 😊"
                     else:
                         response_text = (
                             "You’re very welcome! 😊 Message me anytime you "
