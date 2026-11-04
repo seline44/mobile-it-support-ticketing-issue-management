@@ -18,6 +18,7 @@ from models import (
     Base,
     Ticket,
     TicketHistory,
+    TicketNote,
     User,
     WhatsAppContact,
     WhatsAppConversation,
@@ -83,27 +84,27 @@ class WhatsAppIntegrationTests(unittest.TestCase):
 
     def test_ticket_is_created_from_guided_conversation(self):
         self.assertIn(
-            "describe the issue",
-            self.send("wamid.1", "Lab Wi-Fi is unavailable"),
-        )
-        self.assertIn(
-            "device",
+            "category",
             self.send(
-                "wamid.2",
+                "wamid.1",
                 "I cannot connect to the lab Wi-Fi. I tried restarting "
                 "the laptop, but the issue continues.",
             ).casefold(),
         )
-        self.assertIn("category", self.send("wamid.3", "Laptop").casefold())
-        self.assertIn("affecting your work", self.send("wamid.4", "Network").casefold())
-        self.assertIn("resolved", self.send("wamid.5", "High").casefold())
-        response = self.send("wamid.6", "High")
+        self.assertIn("device", self.send("wamid.2", "Network").casefold())
+        self.assertIn("affecting your work", self.send("wamid.3", "Laptop").casefold())
+        self.assertIn("resolved", self.send("wamid.4", "High").casefold())
+        response = self.send("wamid.5", "High")
 
         ticket = self.db.query(Ticket).one()
         self.assertIn(ticket.ticket_number, response)
         self.assertIn("Your support ticket is in", response)
         self.assertIn("Priority", response)
-        self.assertEqual(ticket.title, "Lab Wi-Fi is unavailable")
+        self.assertEqual(
+            ticket.title,
+            "I cannot connect to the lab Wi-Fi. I tried restarting the laptop, "
+            "but the issue continues.",
+        )
         self.assertEqual(
             ticket.description,
             "I cannot connect to the lab Wi-Fi. I tried restarting "
@@ -129,18 +130,17 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         )
 
     def test_duplicate_webhook_message_does_not_create_duplicate_ticket(self):
-        self.send("wamid.1", "Printer not responding")
-        self.send("wamid.2", "The printer shows offline even after restart.")
+        self.send("wamid.1", "The printer shows offline even after restart.")
+        self.send("wamid.2", "Printer")
         self.send("wamid.3", "Skip")
-        self.send("wamid.4", "Printer")
-        self.send("wamid.5", "Medium")
-        first_response = self.send("wamid.6", "High")
+        self.send("wamid.4", "Medium")
+        first_response = self.send("wamid.5", "High")
         duplicate_response = self.send(
-            "wamid.6", "This content must not be processed twice."
+            "wamid.5", "This content must not be processed twice."
         )
 
         self.assertEqual(first_response, duplicate_response)
-        self.assertEqual(self.db.query(WhatsAppMessage).count(), 6)
+        self.assertEqual(self.db.query(WhatsAppMessage).count(), 5)
         self.assertEqual(self.db.query(Ticket).count(), 1)
         self.assertEqual(self.db.query(Ticket).one().device, "")
 
@@ -225,18 +225,103 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         )
 
     def test_acknowledgement_after_ticket_does_not_start_another_conversation(self):
-        self.send("wamid.1", "Wi-Fi connection issue")
-        self.send("wamid.2", "I cannot access the campus Wi-Fi.")
+        self.send("wamid.1", "I cannot access the campus Wi-Fi.")
+        self.send("wamid.2", "Network")
         self.send("wamid.3", "Laptop")
-        self.send("wamid.4", "Network")
+        self.send("wamid.4", "High")
         self.send("wamid.5", "High")
-        self.send("wamid.6", "High")
 
-        response = self.send("wamid.7", "Okay")
+        response = self.send("wamid.6", "Okay")
 
-        self.assertIn("short title", response)
+        self.assertIn("ticket", response.casefold())
         self.assertEqual(self.db.query(Ticket).count(), 1)
         self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
+        self.assertEqual(self.db.query(TicketNote).count(), 0)
+
+    def test_greeting_is_friendly_and_does_not_start_an_incomplete_ticket(self):
+        response = self.send("wamid.greeting", "Hello, I need help")
+
+        self.assertIn("describe", response.casefold())
+        self.assertEqual(self.db.query(Ticket).count(), 0)
+        self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
+
+    def test_thanks_during_intake_keeps_the_current_step(self):
+        self.send("wamid.thanks.1", "My laptop cannot connect to Wi-Fi.")
+
+        response = self.send("wamid.thanks.2", "Thank you")
+
+        conversation = self.db.query(WhatsAppConversation).one()
+        self.assertEqual(conversation.step, "category")
+        self.assertIn("category", response.casefold())
+        self.assertEqual(self.db.query(Ticket).count(), 0)
+
+    def test_follow_up_is_attached_to_the_latest_active_ticket(self):
+        tickets = [
+            Ticket(
+                ticket_number=f"TD-WA-ACTIVE-{index}",
+                title=f"Active issue {index}",
+                description=f"Active issue description {index}.",
+                category="Network",
+                impact="Medium",
+                urgency="Medium",
+                priority="Medium",
+                status="Open",
+                reporter_id=self.reporter.id,
+            )
+            for index in range(2)
+        ]
+        self.db.add_all(tickets)
+        self.db.commit()
+
+        response = self.send(
+            "wamid.followup",
+            "I also restarted the router and the connection still drops.",
+        )
+
+        self.assertIn(tickets[1].ticket_number, response)
+        self.assertEqual(self.db.query(Ticket).count(), 2)
+        self.assertEqual(
+            self.db.query(TicketNote).one().ticket_id,
+            tickets[1].id,
+        )
+        self.assertFalse(self.db.query(TicketNote).one().is_internal)
+
+    def test_resolved_ticket_requires_confirmation_before_reopening(self):
+        ticket = Ticket(
+            ticket_number="TD-WA-RESOLVED",
+            title="Password reset",
+            description="The user needs a password reset.",
+            category="Account Access",
+            impact="Medium",
+            urgency="High",
+            priority="High",
+            status="Resolved",
+            reporter_id=self.reporter.id,
+            resolution="Reset the account password.",
+        )
+        self.db.add(ticket)
+        self.db.commit()
+
+        response = self.send(
+            "wamid.reopen.1",
+            "The password I was given is not working. Please look at the issue again.",
+        )
+        conversation = self.db.query(WhatsAppConversation).one()
+        self.assertIn("reply *yes* or *no*", response.casefold())
+        self.assertEqual(conversation.step, "reopen_confirmation")
+        self.assertEqual(conversation.ticket_id, ticket.id)
+        self.assertEqual(ticket.status, "Resolved")
+
+        response = self.send("wamid.reopen.2", "Yes")
+
+        self.assertEqual(ticket.status, "Open")
+        self.assertIsNone(ticket.assigned_technician_id)
+        self.assertEqual(self.db.query(WhatsAppConversation).count(), 0)
+        self.assertEqual(self.db.query(TicketNote).one().note,
+                         "The password I was given is not working. Please look at the issue again.")
+        history = self.db.query(TicketHistory).one()
+        self.assertEqual(history.action, "Ticket reopened")
+        self.assertIn("open again", response.casefold())
 
     def test_unlinked_number_automatically_creates_guest_ticket(self):
         response = process_incoming_message(
@@ -247,7 +332,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             "My account is locked.",
         )
 
-        self.assertIn("describe the issue", response.casefold())
+        self.assertIn("category", response.casefold())
         self.assertEqual(
             self.db.query(WhatsAppContact)
             .filter_by(phone_number="+15550000000")
@@ -256,15 +341,14 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         )
 
     def test_account_category_accepts_short_name(self):
-        self.send("wamid.account.1", "Cannot access my account")
-        self.send("wamid.account.2", "I forgot my password and cannot log in.")
-        self.send("wamid.account.3", "Skip")
+        self.send("wamid.account.1", "I forgot my password and cannot log in.")
 
-        response = self.send("wamid.account.4", "Account")
+        response = self.send("wamid.account.2", "Account")
 
         conversation = self.db.query(WhatsAppConversation).one()
         self.assertEqual(conversation.category, "Account Access")
         self.assertIn("Account Access", response)
+        self.assertIn("device", response.casefold())
 
     def test_webhook_signature_matches_twilio_request_validator(self):
         url = "https://example.test/webhooks/whatsapp"
@@ -403,9 +487,11 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         send_message.assert_called_once_with(
             "123456",
             "15551234567",
-            "📝 *Title:* Printer is not working.\n\n"
-            "Now describe the issue in more detail. Include any "
-            "error message and what you’ve already tried.",
+            "📝 *Issue description saved.*\n"
+            "What category fits your issue best?\n\n"
+            "1. Network\n2. Hardware\n3. Software\n4. Email\n"
+            "5. Account Access\n6. Printer\n7. Other\n\n"
+            "Reply with a category name or number.",
         )
 
     def test_twiml_response_contains_reply_message(self):
@@ -453,7 +539,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
 
         self.assertEqual(result.media_type, "application/xml")
         self.assertIn(
-            "<Message>📝 *Title:* Printer is not working.",
+            "<Message>📝 *Issue description saved.*",
             result.body.decode(),
         )
         self.assertEqual(

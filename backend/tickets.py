@@ -111,6 +111,18 @@ def record_history(
     )
 
 
+def history_details_for_user(history: TicketHistory, user: User) -> str | None:
+    if user.role != "Reporter":
+        return history.details
+    if (
+        history.action not in {"Ticket resolved", "Ticket closed"}
+        or not history.details
+        or not history.details.startswith("Resolution:")
+    ):
+        return None
+    return history.details.split("\nUpdate:", 1)[0]
+
+
 def serialize_ticket(db: Session, ticket: Ticket) -> dict:
     """Build a ticket response including requester and technician details."""
     assigned_name = None
@@ -275,6 +287,7 @@ def list_notifications(
             "Ticket created",
             "Ticket created via WhatsApp",
             "Ticket reopened",
+            "Reporter WhatsApp follow-up",
         )
         query = query.filter(
             or_(
@@ -310,7 +323,7 @@ def list_notifications(
             "ticket_number": ticket.ticket_number,
             "ticket_title": ticket.title,
             "action": history.action,
-            "details": history.details,
+            "details": history_details_for_user(history, user),
             "old_status": history.old_status,
             "new_status": history.new_status,
             "actor_name": actor_name,
@@ -432,13 +445,8 @@ def update_ticket_status(
                     ticket_id=ticket.id,
                     author_id=user.id,
                     note=note_text,
+                    is_internal=True,
                 )
-            )
-        if note_text:
-            history_details = (
-                f"{history_details}\nUpdate: {note_text}"
-                if history_details
-                else f"Update: {note_text}"
             )
         record_history(
             db,
@@ -552,7 +560,7 @@ def list_ticket_history(
             "action": history.action,
             "old_status": history.old_status,
             "new_status": history.new_status,
-            "details": history.details,
+            "details": history_details_for_user(history, user),
             "created_at": history.created_at,
         }
         for history, actor_name in rows
@@ -581,6 +589,7 @@ def add_ticket_note(
         ticket_id=ticket.id,
         author_id=user.id,
         note=note_text,
+        is_internal=user.role in {"Technician", "Administrator"},
     )
 
     try:
@@ -590,18 +599,11 @@ def add_ticket_note(
             ticket,
             user.id,
             "Note added",
-            details=f"Update: {note_text}",
+            details=None,
         )
         ticket.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(note)
-        if user.role == "Technician":
-            send_reporter_whatsapp_update(
-                db,
-                ticket,
-                f"{user.full_name} added an update to ticket "
-                f"{ticket.ticket_number}:\n{note_text}",
-            )
         return note
     except Exception:
         db.rollback()
@@ -620,13 +622,14 @@ def list_ticket_notes(
     ticket = get_ticket_or_404(db, ticket_id)
     check_ticket_access(ticket, user)
 
-    rows = (
+    query = (
         db.query(TicketNote, User.full_name)
         .join(User, TicketNote.author_id == User.id)
         .filter(TicketNote.ticket_id == ticket.id)
-        .order_by(TicketNote.created_at.asc())
-        .all()
     )
+    if user.role == "Reporter":
+        query = query.filter(TicketNote.is_internal.is_(False))
+    rows = query.order_by(TicketNote.created_at.asc()).all()
     return [
         {
             "id": note.id,
@@ -634,6 +637,7 @@ def list_ticket_notes(
             "author_id": note.author_id,
             "author_name": author_name,
             "note": note.note,
+            "is_internal": note.is_internal,
             "created_at": note.created_at,
         }
         for note, author_name in rows

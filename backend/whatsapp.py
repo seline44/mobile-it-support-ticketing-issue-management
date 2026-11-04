@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+from datetime import datetime, timezone
 from urllib.parse import parse_qsl
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 from database import get_db
 from models import (
     Ticket,
+    TicketNote,
     User,
     WhatsAppContact,
     WhatsAppConversation,
@@ -55,12 +57,87 @@ GREETING_MESSAGES = {
     "okay",
     "alright",
     "got it",
-    "thanks",
-    "thank you",
-    "thank you!",
     "cool",
 }
+THANK_YOU_MESSAGES = {
+    "thanks",
+    "thank you",
+    "thank you so much",
+    "much appreciated",
+    "appreciate it",
+    "cheers",
+}
+NEW_TICKET_MESSAGES = {
+    "new ticket",
+    "create ticket",
+    "start a new ticket",
+    "report another issue",
+}
+DISSATISFACTION_PHRASES = (
+    "not working",
+    "doesn't work",
+    "does not work",
+    "still not",
+    "still doesn't",
+    "still does not",
+    "not fixed",
+    "not solved",
+    "not resolved",
+    "issue remains",
+    "problem persists",
+    "not satisfied",
+    "look at the issue again",
+    "look at this again",
+)
 MAX_DESCRIPTION_LENGTH = 4000
+MAX_NOTE_LENGTH = 5000
+
+
+def _is_greeting(message: str) -> bool:
+    normalized = message.casefold().strip(" \t\r\n!?.")
+    if normalized in GREETING_MESSAGES:
+        return True
+    return bool(
+        re.fullmatch(
+            r"(?:hi|hello|hey|good morning|good afternoon|good evening)"
+            r"[, ]+(?:i need help|can you help(?: me)?|please help|help me)",
+            normalized,
+        )
+    )
+
+
+def _is_thank_you(message: str) -> bool:
+    normalized = message.casefold().strip(" \t\r\n!?.")
+    return normalized in THANK_YOU_MESSAGES or normalized.startswith(
+        ("thanks ", "thank you ", "thank you,")
+    )
+
+
+def _is_dissatisfied(message: str) -> bool:
+    normalized = message.casefold()
+    return any(phrase in normalized for phrase in DISSATISFACTION_PHRASES)
+
+
+def _ticket_intake_prompt(step: str) -> str:
+    if step == "category":
+        return (
+            "What category fits your issue best?\n\n"
+            + "\n".join(
+                f"{index}. {category}"
+                for index, category in enumerate(CATEGORIES, start=1)
+            )
+            + "\n\nReply with a category name or number."
+        )
+    if step == "device":
+        return (
+            "What device is affected? For example, laptop, phone, or printer. "
+            "Reply *Skip* if there isn’t a specific device."
+        )
+    if step == "impact":
+        return "How much is this affecting your work? Reply *Low*, *Medium*, or *High*."
+    if step == "urgency":
+        return "How soon do you need this resolved? Reply *Low*, *Medium*, or *High*."
+    return "Please describe the IT issue you’re experiencing."
 
 
 def verify_webhook_signature(
@@ -278,71 +355,227 @@ def process_incoming_message(
             if normalized_text == "cancel":
                 if conversation is not None:
                     db.delete(conversation)
-                response_text = (
-                    "🛑 *Request cancelled.* No ticket was created.\n"
-                    "Whenever you need support, just send me a new message."
-                )
-            elif conversation is None:
-                if len(message_text) < 3 or normalized_text in GREETING_MESSAGES:
+                if (
+                    conversation is not None
+                    and conversation.step == "reopen_confirmation"
+                ):
                     response_text = (
-                        "👋 *Hi! I’m TriageDesk Support.*\n"
-                        "Let’s create a support ticket together. First, send a "
-                        "short title for the IT issue (up to 200 characters).\n\n"
-                        "You can send *CANCEL* anytime to stop."
-                    )
-                elif len(message_text) > 200:
-                    response_text = (
-                        "Please shorten the ticket title to 200 characters or "
-                        "fewer. You can share the full details in the next step."
+                        "Okay—I’ll leave your existing ticket as it is. "
+                        "Message me anytime if you need more help."
                     )
                 else:
+                    response_text = (
+                        "🛑 *Request cancelled.* No ticket was created.\n"
+                        "Whenever you need support, just send me a new message."
+                    )
+            elif conversation is not None and conversation.step == "reopen_confirmation":
+                ticket = db.get(Ticket, conversation.ticket_id)
+                if normalized_text in {"yes", "y", "reopen", "confirm"}:
+                    if (
+                        ticket is None
+                        or ticket.reporter_id != user.id
+                        or ticket.status not in {"Resolved", "Closed"}
+                    ):
+                        db.delete(conversation)
+                        response_text = (
+                            "That ticket has already changed, so I couldn’t "
+                            "reopen it. Send *NEW TICKET* if this is a "
+                            "different issue."
+                        )
+                    else:
+                        reason = conversation.description.strip()
+                        old_status = ticket.status
+                        ticket.status = "Open"
+                        ticket.resolved_at = None
+                        ticket.assigned_technician_id = None
+                        ticket.updated_at = datetime.now(timezone.utc)
+                        db.add(
+                            TicketNote(
+                                ticket_id=ticket.id,
+                                author_id=user.id,
+                                note=reason,
+                                is_internal=False,
+                            )
+                        )
+                        record_history(
+                            db,
+                            ticket,
+                            user.id,
+                            "Ticket reopened",
+                            old_status=old_status,
+                            new_status="Open",
+                            details="Reporter reopened the ticket via WhatsApp.",
+                        )
+                        db.delete(conversation)
+                        response_text = (
+                            f"🔄 *Ticket {ticket.ticket_number} is open again.*\n"
+                            "I’ve shared your message with the support team. "
+                            "A technician will review it."
+                        )
+                elif normalized_text in {"no", "n", "don't", "do not"}:
+                    db.delete(conversation)
+                    response_text = (
+                        "No problem—I haven’t reopened the ticket. If you still "
+                        "need help, send *NEW TICKET* to start another request."
+                    )
+                else:
+                    response_text = (
+                        f"Would you like me to reopen ticket "
+                        f"*{ticket.ticket_number if ticket else ''}*? "
+                        "Reply *YES* to reopen it or *NO* to leave it closed."
+                    )
+            elif conversation is not None and _is_thank_you(message_text):
+                response_text = (
+                    "You’re welcome! 😊 Whenever you’re ready, "
+                    + _ticket_intake_prompt(conversation.step)
+                )
+            elif conversation is not None and _is_greeting(message_text):
+                response_text = (
+                    "👋 Hi again! We’re picking up where we left off.\n"
+                    + _ticket_intake_prompt(conversation.step)
+                )
+            elif conversation is None:
+                active_ticket = (
+                    db.query(Ticket)
+                    .filter(
+                        Ticket.reporter_id == user.id,
+                        Ticket.status.in_(("Open", "In Progress", "Pending")),
+                    )
+                    .order_by(Ticket.updated_at.desc(), Ticket.id.desc())
+                    .first()
+                )
+                if _is_thank_you(message_text):
+                    response_text = (
+                        "You’re very welcome! 😊 Message me anytime you need "
+                        "help with IT support."
+                    )
+                elif normalized_text in NEW_TICKET_MESSAGES:
                     conversation = WhatsAppConversation(
                         phone_number=phone_number,
                         step="description",
-                        title=message_text,
                         description="",
                     )
                     db.add(conversation)
                     response_text = (
-                        f"📝 *Title:* {message_text}\n\n"
-                        "Now describe the issue in more detail. Include any "
-                        "error message and what you’ve already tried."
+                        "Absolutely—let’s start a new ticket. First, describe "
+                        "the issue, including any error message and what you’ve "
+                        "already tried."
                     )
+                elif _is_greeting(message_text) or len(message_text) < 3:
+                    if active_ticket is not None:
+                        response_text = (
+                            f"👋 Hi! Your latest ticket, "
+                            f"*{active_ticket.ticket_number}*, is "
+                            f"*{active_ticket.status.casefold()}*.\n"
+                            "Send me an update for the support team, or say "
+                            "*NEW TICKET* to report a different issue."
+                        )
+                    else:
+                        response_text = (
+                            "👋 *Hi! I’m TriageDesk Support.*\n"
+                            "Let’s create a support ticket together. First, "
+                            "describe the IT issue you’re experiencing. Include "
+                            "any error message and what you’ve already tried.\n\n"
+                            "You can send *CANCEL* anytime to stop."
+                        )
+                elif active_ticket is not None:
+                    if len(message_text) > MAX_NOTE_LENGTH:
+                        response_text = (
+                            "Please keep your ticket update to 5,000 "
+                            "characters or fewer."
+                        )
+                    else:
+                        db.add(
+                            TicketNote(
+                                ticket_id=active_ticket.id,
+                                author_id=user.id,
+                                note=message_text,
+                                is_internal=False,
+                            )
+                        )
+                        record_history(
+                            db,
+                            active_ticket,
+                            user.id,
+                            "Reporter WhatsApp follow-up",
+                            details="Reporter sent a WhatsApp follow-up.",
+                        )
+                        active_ticket.updated_at = datetime.now(timezone.utc)
+                        response_text = (
+                            f"💬 Thanks—I’ve added your message to ticket "
+                            f"*{active_ticket.ticket_number}*. The support team can "
+                            "see it and follow up with you here."
+                        )
+                else:
+                    resolved_ticket = (
+                        db.query(Ticket)
+                        .filter(
+                            Ticket.reporter_id == user.id,
+                            Ticket.status.in_(("Resolved", "Closed")),
+                        )
+                        .order_by(Ticket.updated_at.desc(), Ticket.id.desc())
+                        .first()
+                    )
+                    if (
+                        resolved_ticket is not None
+                        and _is_dissatisfied(message_text)
+                    ):
+                        if len(message_text) > MAX_NOTE_LENGTH:
+                            response_text = (
+                                "Please keep your ticket update to 5,000 "
+                                "characters or fewer."
+                            )
+                        else:
+                            conversation = WhatsAppConversation(
+                                phone_number=phone_number,
+                                step="reopen_confirmation",
+                                description=message_text,
+                                ticket_id=resolved_ticket.id,
+                            )
+                            db.add(conversation)
+                            response_text = (
+                                f"Sorry the issue is still causing trouble. Would "
+                                f"you like me to reopen *ticket "
+                                f"{resolved_ticket.ticket_number}* and send this "
+                                "message to the support team? Reply *YES* or *NO*."
+                            )
+                    elif len(message_text) > MAX_DESCRIPTION_LENGTH:
+                        response_text = (
+                            "Please keep your issue description to 4,000 "
+                            "characters or fewer."
+                        )
+                    else:
+                        conversation = WhatsAppConversation(
+                            phone_number=phone_number,
+                            step="category",
+                            description=message_text,
+                        )
+                        db.add(conversation)
+                        response_text = (
+                            "📝 *Issue description saved.*\n"
+                            "What category fits your issue best?\n\n"
+                            + "\n".join(
+                                f"{index}. {category}"
+                                for index, category in enumerate(CATEGORIES, start=1)
+                            )
+                            + "\n\nReply with a category name or number."
+                        )
             elif conversation.step == "description":
                 if len(message_text) < 3:
                     response_text = (
-                        "Please add a little more detail so the support team "
-                        "can understand the issue."
+                        "Please describe the issue in a little more detail "
+                        "before we continue."
                     )
                 elif len(message_text) > MAX_DESCRIPTION_LENGTH:
                     response_text = (
-                        "Please keep the issue description to 4,000 characters "
+                        "Please keep your issue description to 4,000 characters "
                         "or fewer."
                     )
                 else:
                     conversation.description = message_text
-                    conversation.step = "device"
-                    response_text = (
-                        "✅ *Description saved.*\n"
-                        "What device is affected? For example, laptop, phone, "
-                        "or printer.\n"
-                        "Reply *Skip* if there isn’t a specific device."
-                    )
-            elif conversation.step == "device":
-                if normalized_text not in {"skip", "none", "n/a", "na"} and (
-                    len(message_text) > 150
-                ):
-                    response_text = (
-                        "Please keep the device name to 150 characters or fewer, "
-                        "or reply *Skip*."
-                    )
-                else:
-                    conversation.device = (
-                        "" if normalized_text in {"skip", "none", "n/a", "na"}
-                        else message_text
-                    )
                     conversation.step = "category"
                     response_text = (
+                        "📝 *Issue description saved.*\n"
                         "What category fits your issue best?\n\n"
                         + "\n".join(
                             f"{index}. {category}"
@@ -373,9 +606,30 @@ def process_incoming_message(
                     )
                 else:
                     conversation.category = category
-                    conversation.step = "impact"
+                    conversation.step = "device"
                     response_text = (
                         f"✅ *{category}* — got it.\n"
+                        "What device is affected? For example, laptop, phone, "
+                        "or printer.\n"
+                        "Reply *Skip* if there isn’t a specific device."
+                    )
+            elif conversation.step == "device":
+                if normalized_text not in {"skip", "none", "n/a", "na"} and (
+                    len(message_text) > 150
+                ):
+                    response_text = (
+                        "Please keep the device name to 150 characters or fewer, "
+                        "or reply *Skip*."
+                    )
+                else:
+                    conversation.device = (
+                        ""
+                        if normalized_text in {"skip", "none", "n/a", "na"}
+                        else message_text
+                    )
+                    conversation.step = "impact"
+                    response_text = (
+                        f"👍 Device: *{conversation.device or 'Not specified'}*.\n"
                         "How much is this affecting your work?\n"
                         "Reply *Low*, *Medium*, or *High*."
                     )
@@ -397,7 +651,7 @@ def process_incoming_message(
                     conversation.impact = impact
                     conversation.step = "urgency"
                     response_text = (
-                        f"👍 Impact: *{impact}*.\n"
+                        f"📊 Impact: *{impact}*.\n"
                         "How soon do you need this resolved?\n"
                         "Reply *Low*, *Medium*, or *High*."
                     )

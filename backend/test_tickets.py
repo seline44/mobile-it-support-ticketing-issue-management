@@ -104,6 +104,7 @@ class TicketCompletionTests(unittest.TestCase):
                     note.note,
                     f"Reporter update for {status.lower()}.",
                 )
+                self.assertTrue(note.is_internal)
                 history = (
                     self.db.query(TicketHistory)
                     .order_by(TicketHistory.id.desc())
@@ -117,9 +118,9 @@ class TicketCompletionTests(unittest.TestCase):
 
         reporter_notes = list_ticket_notes(self.ticket.id, self.db, self.reporter)
         admin_notes = list_ticket_notes(self.ticket.id, self.db, self.admin)
-        self.assertEqual(len(reporter_notes), 2)
+        self.assertEqual(reporter_notes, [])
         self.assertEqual(len(admin_notes), 2)
-        self.assertEqual(reporter_notes[0]["author_name"], "Ticket Technician")
+        self.assertTrue(all(note["is_internal"] for note in admin_notes))
 
         reporter_history = list_ticket_history(
             self.ticket.id,
@@ -130,6 +131,8 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertEqual(len(reporter_history), 2)
         self.assertEqual(len(admin_history), 2)
         self.assertEqual(reporter_history[-1]["new_status"], "Closed")
+        self.assertIn("Resolution:", reporter_history[-1]["details"])
+        self.assertNotIn("Reporter update", str(reporter_history[-1]["details"]))
 
     def test_completion_requires_a_resolution_note(self):
         with self.assertRaises(HTTPException) as error:
@@ -144,6 +147,42 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertEqual(self.ticket.status, "In Progress")
         self.assertEqual(self.db.query(TicketHistory).count(), 0)
         self.assertEqual(self.db.query(TicketNote).count(), 0)
+
+    def test_reporter_comments_are_visible_to_staff_not_private(self):
+        from schemas import NoteCreate
+        from tickets import add_ticket_note
+
+        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+            reporter_note = add_ticket_note(
+                self.ticket.id,
+                NoteCreate(note="The error appeared again."),
+                self.db,
+                self.reporter,
+            )
+            technician_note = add_ticket_note(
+                self.ticket.id,
+                NoteCreate(note="Checking the device logs."),
+                self.db,
+                self.technician,
+            )
+        send_update.assert_not_called()
+
+        self.assertFalse(reporter_note.is_internal)
+        self.assertTrue(technician_note.is_internal)
+        reporter_notes = list_ticket_notes(
+            self.ticket.id, self.db, self.reporter
+        )
+        technician_notes = list_ticket_notes(
+            self.ticket.id, self.db, self.technician
+        )
+        self.assertEqual(
+            [note["note"] for note in reporter_notes],
+            ["The error appeared again."],
+        )
+        self.assertEqual(
+            [note["note"] for note in technician_notes],
+            ["The error appeared again.", "Checking the device logs."],
+        )
 
     def test_ticket_details_include_whatsapp_requester_contact(self):
         self.db.add(
@@ -229,7 +268,10 @@ class TicketCompletionTests(unittest.TestCase):
                 action="Ticket resolved",
                 old_status="In Progress",
                 new_status="Resolved",
-                details="Resolution: Replaced the faulty adapter.",
+                details=(
+                    "Resolution: Replaced the faulty adapter.\n"
+                    "Update: Internal diagnostic details."
+                ),
             )
         )
         unassigned_ticket = Ticket(
@@ -271,6 +313,14 @@ class TicketCompletionTests(unittest.TestCase):
             reporter_notifications[0]["actor_name"],
             "Ticket Technician",
         )
+        self.assertIn(
+            "Replaced the faulty adapter",
+            reporter_notifications[0]["details"],
+        )
+        self.assertNotIn(
+            "Internal diagnostic details",
+            reporter_notifications[0]["details"],
+        )
         self.assertEqual(len(technician_notifications), 1)
         self.assertEqual(
             technician_notifications[0]["action"],
@@ -308,6 +358,7 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertIn("TD-TEST-1", message)
         self.assertIn("resolved", message.casefold())
         self.assertIn("Replaced the faulty adapter.", message)
+        self.assertNotIn("Please test the connection again.", message)
         self.assertNotIn(self.technician.full_name, message)
 
     def test_reporter_can_reopen_own_resolved_ticket_with_reason(self):

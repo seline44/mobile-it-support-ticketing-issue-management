@@ -58,6 +58,7 @@ class NoteResponse(BaseModel):
     author_id: int
     author_name: str | None = None
     note: str
+    is_internal: bool
     created_at: datetime
 
 class ReopenRequest(BaseModel):

@@ -64,7 +64,7 @@ Add these environment variables to the web service in the Render dashboard:
 
 Enter secret values directly in Render's environment settings. Do not put them
 in `render.yaml`, source code, or Git. The startup command creates any missing
-tables and applies the existing resolution and WhatsApp conversation-field
+tables and applies the resolution, WhatsApp conversation, and private-note
 migrations before starting FastAPI. Use a service plan that remains available
 for production webhooks; free services can sleep and delay webhook responses.
 
@@ -146,9 +146,10 @@ The corresponding unlink endpoint is
 `DELETE /admin/users/{user_id}/whatsapp`. Both endpoints require an
 Administrator access token.
 
-WhatsApp ticket creation collects a separate title, full issue description,
-optional device, category, impact, and urgency. Location remains blank for
-WhatsApp tickets. The sender's WhatsApp number identifies the Reporter; an unlinked
+WhatsApp ticket creation starts by collecting the issue description, then asks
+for category, optional device, impact, and urgency. The ticket title is derived
+from the description. Location remains blank for WhatsApp tickets. The sender's
+WhatsApp number identifies the Reporter; an unlinked
 number gets a guest Reporter record, while an administrator can link a number
 to an existing Reporter account using the endpoint above. The ticket is saved
 to the same database as app-created tickets, appears as an unassigned Open
@@ -158,9 +159,16 @@ and WhatsApp number to technicians and administrators.
 Send `CANCEL` to stop an in-progress ticket conversation. Duplicate webhook
 deliveries from either provider are handled idempotently.
 
+After ticket creation, messages are added to the reporter's latest active
+ticket and appear for the support team. Send `NEW TICKET` to start another
+request. If a reporter says that a resolved issue is still not working, the bot
+asks before reopening the ticket. Greetings and thanks receive conversational
+replies without advancing an intake step. Technician and administrator work
+notes are internal. Reporters can see their submitted updates and the ticket's
+resolution; resolution text is also included in WhatsApp resolution updates.
+
 The Administrator dashboard checks the WhatsApp ticket notification feed
 every 30 seconds and displays newly created WhatsApp tickets in its in-app
 notifications and ticket list. Reporter and Technician dashboards also check
-ticket history notifications every 30 seconds, including tickets created via
-WhatsApp and technician updates. These are in-app notifications, not mobile
-push or email alerts.
+ticket history notifications every 30 seconds, including tickets created via WhatsApp and reporter follow-ups.
+These are in-app notifications, not mobile push or email alerts.

@@ -98,8 +98,8 @@ class _CompleteTicketDialogState extends State<_CompleteTicketDialog> {
               maxLines: 4,
               maxLength: 5000,
               decoration: const InputDecoration(
-                labelText: 'Work note (optional)',
-                hintText: 'Add an update for the reporter and admin',
+                labelText: 'Internal work note (optional)',
+                hintText: 'Only visible to technicians and administrators',
                 alignLabelWithHint: true,
               ),
             ),
@@ -307,9 +307,11 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
       for (final item in notes.whereType<Map>()) {
         final entry = Map<String, dynamic>.from(item);
         final author = entry['author_name']?.toString();
+        final isInternal = entry['is_internal'] == true;
         final createdAt = DateTime.parse(entry['created_at'].toString());
         updates.add({
           'title':
+              '${isInternal ? '🔒 Internal note · ' : ''}'
               '${author == null || author.isEmpty ? 'User' : author}: '
               '${entry['note']}',
           'time': _formatHistoryTime(createdAt),
@@ -484,6 +486,8 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     final priorityColor = _priorityColor();
     final isTechnician = ApiService.currentUser?['role'] == 'Technician';
     final isReporter = ApiService.currentUser?['role'] == 'Reporter';
+    final isStaff = isTechnician ||
+        ApiService.currentUser?['role'] == 'Administrator';
     final canViewRequester =
         isTechnician || ApiService.currentUser?['role'] == 'Administrator';
 
@@ -852,7 +856,9 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                   child: TextField(
                     controller: _commentController,
                     decoration: InputDecoration(
-                      hintText: 'Add a comment...',
+                      hintText: isStaff
+                          ? 'Add an internal note (staff only)...'
+                          : 'Send an update to the support team...',
                       filled: true,
                       fillColor: theme.scaffoldBackgroundColor,
                       contentPadding: const EdgeInsets.symmetric(
