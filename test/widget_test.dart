@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:triagedesk/main.dart';
 import 'package:triagedesk/screens/admin_dashboard.dart';
 import 'package:triagedesk/screens/technician_dashboard.dart';
@@ -144,6 +145,7 @@ void main() {
   testWidgets('login and registration render with both color themes', (
     WidgetTester tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
     for (final theme in [AppTheme.lightTheme, AppTheme.darkTheme]) {
       await tester.pumpWidget(
         MaterialApp(
@@ -317,6 +319,7 @@ void main() {
   testWidgets('admin dashboard tabs and WhatsApp linking work', (
     WidgetTester tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
     String? linkedPhone;
     String? updatedApproval;
     int? deletedUserId;
@@ -461,7 +464,7 @@ void main() {
       expect(find.text('Overview'), findsOneWidget);
       expect(find.text('Triage Admin'), findsWidgets);
       expect(find.text('Total tickets'), findsOneWidget);
-      await tester.tap(find.byTooltip('Notifications / Refresh'));
+      await tester.tap(find.byTooltip('Notifications'));
       await tester.pumpAndSettle();
       expect(find.text('Notifications'), findsOneWidget);
       expect(find.text('TD-WA-42'), findsOneWidget);
@@ -552,9 +555,19 @@ void main() {
 
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Reports'));
+      await tester.tap(find.byType(NavigationDestination).at(3));
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('By category'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('By category'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Network'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Network'), findsOneWidget);
 
       await tester.tap(find.text('Settings'));
@@ -568,6 +581,7 @@ void main() {
   testWidgets('admin Users and Reports remain available if tickets fail', (
     WidgetTester tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
     final client = MockClient((request) async {
       if (request.url.path == '/auth/login') {
         return http.Response(
@@ -606,13 +620,18 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Reports'));
+      await tester.tap(find.byType(NavigationDestination).at(3));
       await tester.pumpAndSettle();
-      expect(find.text('By category'), findsOneWidget);
       expect(find.text('Download report'), findsOneWidget);
       expect(find.text('PDF'), findsOneWidget);
       expect(find.text('Word'), findsOneWidget);
       expect(find.text('Excel'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('By category'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('By category'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }, () => client);
   });
@@ -620,6 +639,7 @@ void main() {
   testWidgets('technician dashboard uses the logged-in user and API tickets', (
     WidgetTester tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
     final client = MockClient((request) async {
       if (request.url.path == '/auth/login') {
         return http.Response(
@@ -695,7 +715,7 @@ void main() {
       expect(find.text('Assigned to this technician'), findsWidgets);
       expect(find.text('John Doe updated ticket #TKT-0011'), findsNothing);
       expect(find.text('Sarah K. created ticket #TKT-0012'), findsNothing);
-      await tester.tap(find.byTooltip('Notifications / Refresh'));
+      await tester.tap(find.byTooltip('Notifications'));
       await tester.pumpAndSettle();
       expect(find.text('TD-51: Ticket created via WhatsApp'), findsOneWidget);
       expect(find.textContaining('New request from WhatsApp.'), findsOneWidget);

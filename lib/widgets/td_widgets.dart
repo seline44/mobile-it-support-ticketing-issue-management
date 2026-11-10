@@ -1,6 +1,132 @@
 import 'package:flutter/material.dart';
+
 import '../theme/td_theme.dart';
 import '../widgets/triagedesk_logo.dart';
+
+TextStyle tdDashboardTitleStyle(BuildContext context) {
+  final theme = Theme.of(context);
+  return theme.textTheme.titleLarge!.copyWith(
+    color: theme.colorScheme.primary,
+    fontSize: 18,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.3,
+  );
+}
+
+TextStyle tdDashboardSubtitleStyle(BuildContext context) {
+  final theme = Theme.of(context);
+  return theme.textTheme.bodySmall!.copyWith(
+    color: theme.colorScheme.onSurfaceVariant,
+    fontSize: 13,
+  );
+}
+
+class TdBrandedAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final String initials;
+  final bool showNotificationDot;
+  final VoidCallback onNotificationsTap;
+  final VoidCallback onAvatarTap;
+
+  const TdBrandedAppBar({
+    super.key,
+    required this.initials,
+    required this.showNotificationDot,
+    required this.onNotificationsTap,
+    required this.onAvatarTap,
+  });
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return AppBar(
+      automaticallyImplyLeading: false,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      foregroundColor: colors.onSurface,
+      elevation: 0,
+      titleSpacing: 0,
+      title: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: Row(
+              children: [
+                const TriageDeskLogo(size: 42),
+                const SizedBox(width: 8),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Triage',
+                        style: TextStyle(color: colors.onSurface),
+                      ),
+                      TextSpan(
+                        text: 'Desk',
+                        style: TextStyle(color: colors.primary),
+                      ),
+                    ],
+                  ),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Notifications',
+                  onPressed: onNotificationsTap,
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.notifications_none_rounded, size: 23),
+                      if (showNotificationDot)
+                        Positioned(
+                          right: -1,
+                          top: -1,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: TdColors.coral,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 7),
+                InkWell(
+                  onTap: onAvatarTap,
+                  customBorder: const CircleBorder(),
+                  child: CircleAvatar(
+                    radius: 17,
+                    backgroundColor: colors.primary,
+                    child: Text(
+                      initials,
+                      style: TextStyle(
+                        color: colors.onPrimary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class TdSupportStatusBanner extends StatelessWidget {
   const TdSupportStatusBanner({super.key});
@@ -8,7 +134,8 @@ class TdSupportStatusBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final isWeekday = now.weekday >= DateTime.monday && now.weekday <= DateTime.friday;
+    final isWeekday =
+        now.weekday >= DateTime.monday && now.weekday <= DateTime.friday;
     final isWorkingHours = now.hour >= 8 && now.hour < 18;
     final isOnline = isWeekday && isWorkingHours;
 
@@ -16,9 +143,7 @@ class TdSupportStatusBanner extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: isOnline
-            ? const Color(0xFFE0F3EA)
-            : const Color(0xFFFDF1DC),
+        color: isOnline ? const Color(0xFFE0F3EA) : const Color(0xFFFDF1DC),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isOnline
@@ -32,7 +157,9 @@ class TdSupportStatusBanner extends StatelessWidget {
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: isOnline ? const Color(0xFF2E9D6B) : const Color(0xFFE8A13A),
+              color: isOnline
+                  ? const Color(0xFF2E9D6B)
+                  : const Color(0xFFE8A13A),
               shape: BoxShape.circle,
             ),
           ),
@@ -45,7 +172,9 @@ class TdSupportStatusBanner extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isOnline ? const Color(0xFF1E7A50) : const Color(0xFF9A6112),
+                color: isOnline
+                    ? const Color(0xFF1E7A50)
+                    : const Color(0xFF9A6112),
               ),
             ),
           ),
@@ -95,9 +224,7 @@ class TdMark extends StatelessWidget {
         color: background ?? Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(size * 0.3),
       ),
-      child: Center(
-        child: TriageDeskLogo(size: size * 0.65),
-      ),
+      child: Center(child: TriageDeskLogo(size: size * 0.65)),
     );
   }
 }
@@ -105,18 +232,16 @@ class TdMark extends StatelessWidget {
 class TdUserHeader extends StatelessWidget {
   final String name;
   final String role;
+  final String email;
   final String initials;
-  final bool showDot;
-  final VoidCallback onBellTap;
   final VoidCallback onAvatarTap;
 
   const TdUserHeader({
     super.key,
     required this.name,
     required this.role,
+    this.email = '',
     required this.initials,
-    required this.showDot,
-    required this.onBellTap,
     required this.onAvatarTap,
   });
 
@@ -125,21 +250,27 @@ class TdUserHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.5)),
+      ),
       child: Row(
         children: [
           GestureDetector(
             onTap: onAvatarTap,
             child: CircleAvatar(
-              radius: 22,
-              backgroundColor: TdColors.teal,
+              radius: 20,
+              backgroundColor: colors.primary,
               child: Text(
                 initials,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: colors.onPrimary,
                   fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  fontSize: 13,
                 ),
               ),
             ),
@@ -148,46 +279,45 @@ class TdUserHeader extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   name,
-                  style: const TextStyle(
-                    fontSize: 16,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                Text(
-                  role,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: colors.onSurfaceVariant,
+                if (email.isNotEmpty)
+                  Text(
+                    email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 11.5,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
-          Stack(
-            alignment: Alignment.topRight,
-            children: [
-              IconButton(
-                onPressed: onBellTap,
-                icon: const Icon(Icons.notifications_outlined),
-                tooltip: 'Notifications / Refresh',
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: colors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              role,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: colors.primary,
               ),
-              if (showDot)
-                Positioned(
-                  right: 10,
-                  top: 10,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: TdColors.coral,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-            ],
+            ),
           ),
         ],
       ),
@@ -264,10 +394,11 @@ class TdSectionHeader extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.3,
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: theme.colorScheme.primary,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
           ),
         ),
         if (actionLabel != null && onAction != null)
@@ -338,10 +469,7 @@ class TdEmptyState extends StatelessWidget {
           ),
           if (actionLabel != null && onAction != null) ...[
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: onAction,
-              child: Text(actionLabel!),
-            ),
+            FilledButton(onPressed: onAction, child: Text(actionLabel!)),
           ],
         ],
       ),

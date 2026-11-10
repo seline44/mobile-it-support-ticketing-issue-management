@@ -373,10 +373,13 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
       if (!mounted) return;
       final emailSent = updated['email_notification_sent'] == true;
       final emailFailed = updated['email_notification_sent'] == false;
+      final isResolved = {'Resolved', 'Closed'}.contains(_status);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            emailSent
+            !isResolved
+                ? 'Ticket $_status successfully.'
+                : emailSent
                 ? 'Ticket $_status. Email accepted by the mail server and update added to TriageDesk notifications.'
                 : emailFailed
                 ? 'Ticket $_status and update added to TriageDesk notifications, but the reporter email could not be sent. Check backend logs.'
