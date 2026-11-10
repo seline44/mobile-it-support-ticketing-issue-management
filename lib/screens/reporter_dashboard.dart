@@ -8,7 +8,9 @@ import '../services/api_service.dart';
 import '../services/whatsapp_contact.dart';
 import '../theme/app_theme.dart';
 import '../theme/td_theme.dart';
+import '../utils/api_timestamp.dart';
 import '../widgets/triagedesk_logo.dart';
+import '../widgets/td_ticket_widgets.dart';
 import '../widgets/td_widgets.dart';
 import '../widgets/user_header.dart';
 import '../widgets/whatsapp_support_panel.dart';
@@ -187,7 +189,9 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
           assignedTechnician: ticket.assignedTechnician,
           reporterName: ticket.reporterName,
           reporterPhone: ticket.reporterPhone,
+          createdAt: ticket.createdAt,
           lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
+          resolvedAt: ticket.resolvedAt,
         ),
       ),
     );
@@ -811,7 +815,7 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
                 notification['action']?.toString() ?? 'Ticket updated';
             final actor = notification['actor_name']?.toString();
             final details = notification['details']?.toString();
-            final timestamp = DateTime.tryParse(
+            final timestamp = tryParseApiTimestamp(
               notification['created_at']?.toString() ?? '',
             );
             final isComplete =
@@ -848,7 +852,8 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
                     [
                       if (actor != null && actor.isNotEmpty) actor,
                       if (details != null && details.isNotEmpty) details,
-                      if (timestamp != null) _formattedTicketDate(timestamp),
+                      if (timestamp != null)
+                        tdFormatDateTime(context, timestamp),
                     ].join('\n'),
                     style: TextStyle(color: textSecondary, fontSize: 13),
                   ),
@@ -1057,6 +1062,11 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
                         ticket.category,
                         style: TextStyle(fontSize: 12, color: textSecondary),
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        tdFormatDateTime(context, ticket.createdAt),
+                        style: TextStyle(fontSize: 11, color: textSecondary),
+                      ),
                       const SizedBox(height: 9),
                     ] else ...[
                       const SizedBox(height: 3),
@@ -1071,10 +1081,10 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
                         ),
                       ),
                       Text(
-                        _formattedTicketDate(ticket.createdAt),
+                        tdFormatDateTime(context, ticket.createdAt),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 9, color: textSecondary),
+                        style: TextStyle(fontSize: 10, color: textSecondary),
                       ),
                     ],
                   ],
@@ -1123,38 +1133,6 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
         ),
       ),
     );
-  }
-
-  String _formattedTicketDate(DateTime createdAt) {
-    final date = createdAt.toLocal();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final ticketDay = DateTime(date.year, date.month, date.day);
-    if (ticketDay == today) {
-      return 'Today, ${TimeOfDay.fromDateTime(date).format(context)}';
-    }
-    if (ticketDay == today.subtract(const Duration(days: 1))) {
-      return 'Yesterday, ${TimeOfDay.fromDateTime(date).format(context)}';
-    }
-
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    if (date.year == now.year) {
-      return '${months[date.month - 1]} ${date.day}';
-    }
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
   Color _statusChipBackground(String status) {

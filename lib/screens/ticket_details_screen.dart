@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/api_timestamp.dart';
+import '../widgets/td_ticket_widgets.dart';
 
 class TicketDetailsScreen extends StatefulWidget {
   final String id;
@@ -17,7 +19,9 @@ class TicketDetailsScreen extends StatefulWidget {
   final String? assignedTechnician;
   final String? reporterName;
   final String? reporterPhone;
+  final DateTime? createdAt;
   final DateTime? lastModifiedAt;
+  final DateTime? resolvedAt;
 
   const TicketDetailsScreen({
     super.key,
@@ -34,7 +38,9 @@ class TicketDetailsScreen extends StatefulWidget {
     this.assignedTechnician,
     this.reporterName,
     this.reporterPhone,
+    this.createdAt,
     this.lastModifiedAt,
+    this.resolvedAt,
   });
 
   @override
@@ -292,6 +298,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
         final actor = entry['actor_name']?.toString();
         final action = entry['action']?.toString() ?? 'Ticket updated';
         final details = entry['details']?.toString();
+        final createdAt = parseApiTimestamp(entry['created_at'].toString());
         final title = [
           if (actor != null && actor.isNotEmpty) '$actor: ',
           action,
@@ -299,17 +306,15 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
         ].join();
         updates.add({
           'title': title,
-          'time': _formatHistoryTime(
-            DateTime.parse(entry['created_at'].toString()),
-          ),
-          'sortTime': DateTime.parse(entry['created_at'].toString()),
+          'time': _formatHistoryTime(createdAt),
+          'sortTime': createdAt,
         });
       }
       for (final item in notes.whereType<Map>()) {
         final entry = Map<String, dynamic>.from(item);
         final author = entry['author_name']?.toString();
         final isInternal = entry['is_internal'] == true;
-        final createdAt = DateTime.parse(entry['created_at'].toString());
+        final createdAt = parseApiTimestamp(entry['created_at'].toString());
         updates.add({
           'title':
               '${isInternal ? '🔒 Internal note · ' : ''}'
@@ -671,10 +676,21 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                         const Divider(height: 20),
                         _metaRow(
                           'Created',
-                          'Today, 10:24 AM',
+                          widget.createdAt == null
+                              ? 'Date unavailable'
+                              : tdFormatDateTime(context, widget.createdAt!),
                           textPrimary,
                           textSecondary,
                         ),
+                        if (widget.resolvedAt != null) ...[
+                          const Divider(height: 20),
+                          _metaRow(
+                            'Resolved',
+                            tdFormatDateTime(context, widget.resolvedAt!),
+                            textPrimary,
+                            textSecondary,
+                          ),
+                        ],
                         const Divider(height: 20),
                         _metaRow(
                           'Assigned to',

@@ -42,7 +42,9 @@ Future<void> _openTicketDetails(
         assignedTechnician: ticket.assignedTechnician,
         reporterName: ticket.reporterName,
         reporterPhone: ticket.reporterPhone,
+        createdAt: ticket.createdAt,
         lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
+        resolvedAt: ticket.resolvedAt,
       ),
     ),
   );
@@ -346,7 +348,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final inProgress = tickets.where((t) => t.status == 'In Progress').length;
     final now = DateTime.now();
     final resolvedToday = tickets.where((ticket) {
-      final resolvedAt = ticket.resolvedAt;
+      final resolvedAt = ticket.resolvedAt?.toLocal();
       return ticket.status == 'Resolved' &&
           resolvedAt != null &&
           resolvedAt.year == now.year &&
@@ -480,14 +482,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
         _ => 'Low',
       };
       priorityCounts.update(priority, (count) => count + 1);
+      final createdAt = ticket.createdAt.toLocal();
       final age = startOfToday
-          .difference(
-            DateTime(
-              ticket.createdAt.year,
-              ticket.createdAt.month,
-              ticket.createdAt.day,
-            ),
-          )
+          .difference(DateTime(createdAt.year, createdAt.month, createdAt.day))
           .inDays;
       if (age >= 0 && age < volume.length) volume[volume.length - 1 - age]++;
     }

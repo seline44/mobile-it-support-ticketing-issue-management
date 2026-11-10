@@ -1,3 +1,5 @@
+import '../utils/api_timestamp.dart';
+
 class Ticket {
   final String id;
   final String? ticketNumber;
@@ -66,17 +68,17 @@ class Ticket {
       reporterName: json['reporter_name']?.toString(),
       reporterPhone: json['reporter_phone']?.toString(),
       status: json['status']?.toString() ?? 'Open',
-      createdAt: DateTime.parse(json['created_at'].toString()),
+      createdAt: parseApiTimestamp(json['created_at'].toString()),
       updatedAt: json['updated_at'] == null
           ? null
-          : DateTime.parse(json['updated_at'].toString()),
+          : parseApiTimestamp(json['updated_at'].toString()),
       lastModifiedBy: json['last_modified_by_name']?.toString(),
       lastModifiedAt: json['last_modified_at'] == null
           ? null
-          : DateTime.parse(json['last_modified_at'].toString()),
+          : parseApiTimestamp(json['last_modified_at'].toString()),
       resolvedAt: json['resolved_at'] == null
           ? null
-          : DateTime.parse(json['resolved_at'].toString()),
+          : parseApiTimestamp(json['resolved_at'].toString()),
       assignedTechnician:
           assignedName?.toString() ??
           (assignedId == null ? null : 'Technician #$assignedId'),

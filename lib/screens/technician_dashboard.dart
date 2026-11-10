@@ -309,7 +309,9 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
           assignedTechnician: ticket.assignedTechnician,
           reporterName: ticket.reporterName,
           reporterPhone: ticket.reporterPhone,
+          createdAt: ticket.createdAt,
           lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
+          resolvedAt: ticket.resolvedAt,
         ),
       ),
     );
@@ -576,7 +578,7 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
                       ? '${tdTicketLabel(t)} · ${t.status}'
                       : '${t.lastModifiedBy} updated ${tdTicketLabel(t)}',
                   description: t.title,
-                  time: tdTimeAgo(tdLastTouched(t)),
+                  time: tdFormatDateTime(context, tdLastTouched(t)),
                 ),
           ],
         ],
@@ -827,7 +829,7 @@ class _UpNextCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             '${tdTicketLabel(ticket)} · ${ticket.category} · '
-            '${tdTimeAgo(ticket.createdAt)}',
+            '${tdFormatDateTime(context, ticket.createdAt)}',
             style: TdFonts.monoStyle.copyWith(
               color: Colors.white.withValues(alpha: 0.85),
               fontSize: 11.5,

@@ -19,11 +19,19 @@ String tdTicketLabel(Ticket t) {
 }
 
 String tdTimeAgo(DateTime dateTime) {
-  final elapsed = DateTime.now().difference(dateTime.toLocal());
+  final elapsed = DateTime.now().toUtc().difference(dateTime.toUtc());
   if (elapsed.inDays > 0) return '${elapsed.inDays}d ago';
   if (elapsed.inHours > 0) return '${elapsed.inHours}h ago';
   if (elapsed.inMinutes > 0) return '${elapsed.inMinutes}m ago';
   return 'Just now';
+}
+
+String tdFormatDateTime(BuildContext context, DateTime dateTime) {
+  final local = dateTime.toLocal();
+  final localizations = MaterialLocalizations.of(context);
+  final date = localizations.formatMediumDate(local);
+  final time = localizations.formatTimeOfDay(TimeOfDay.fromDateTime(local));
+  return '$date · $time';
 }
 
 class TdSignalBars {
@@ -193,6 +201,14 @@ class TdTicketCard extends StatelessWidget {
                             ),
                             TdSignalBars.build(ticket.priority),
                           ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          tdFormatDateTime(context, ticket.createdAt),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
