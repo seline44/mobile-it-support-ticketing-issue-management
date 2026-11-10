@@ -31,4 +31,6 @@ def send_email(to_email: str, subject: str, body: str) -> None:
         server.starttls()
         server.ehlo()
         server.login(smtp_username, smtp_password)
-        server.send_message(message)
+        refused_recipients = server.send_message(message)
+        if refused_recipients:
+            raise smtplib.SMTPRecipientsRefused(refused_recipients)
