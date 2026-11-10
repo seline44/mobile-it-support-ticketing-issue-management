@@ -890,6 +890,10 @@ void main() {
       await tester.tap(find.text('Tickets').last);
       await tester.pumpAndSettle();
       expect(find.text('In Progress'), findsWidgets);
+      await tester.tap(find.text('Unclaimed laptop issue'));
+      await tester.pumpAndSettle();
+      expect(find.text('Description'), findsOneWidget);
+      expect(find.text('The laptop will not start.'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }, () => client);
   });
@@ -961,6 +965,8 @@ void main() {
             'status': 'Closed',
             'resolution': submitted!['resolution'],
             'resolved_at': DateTime.now().toIso8601String(),
+            'whatsapp_notification_sent': false,
+            'email_notification_sent': true,
           }),
           200,
         );
@@ -1014,6 +1020,13 @@ void main() {
       expect(submitted?['note'], 'Reporter notified of the repair.');
       expect(find.text('Closed'), findsOneWidget);
       expect(find.text('Replaced the power adapter.'), findsWidgets);
+      expect(
+        find.text(
+          'Ticket Closed. Email accepted by the mail server and update added to TriageDesk notifications.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('WhatsApp could not send'), findsNothing);
       expect(
         find.textContaining('Reporter notified of the repair.'),
         findsOneWidget,

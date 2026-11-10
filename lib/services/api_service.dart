@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'offline_sync_service.dart';
 
 class ApiService {
   static const String baseUrl = String.fromEnvironment(
@@ -117,16 +118,25 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getTickets() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/tickets'),
-      headers: _headers,
-    );
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/tickets'),
+        headers: _headers,
+      );
 
-    final decoded = _decode(response);
-    if (response.statusCode == 200 && decoded is List) {
-      return decoded;
+      final decoded = _decode(response);
+      if (response.statusCode == 200 && decoded is List) {
+        await OfflineSyncService.cacheTickets(decoded);
+        return decoded;
+      }
+      throw Exception(_error(decoded, 'Could not load tickets'));
+    } catch (error) {
+      final cached = await OfflineSyncService.getCachedTickets();
+      if (cached.isNotEmpty) {
+        return cached;
+      }
+      rethrow;
     }
-    throw Exception(_error(decoded, 'Could not load tickets'));
   }
 
   static Future<List<dynamic>> getTicketNotifications() async {

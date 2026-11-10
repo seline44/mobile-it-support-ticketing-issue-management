@@ -371,11 +371,15 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
       });
       await _loadHistory();
       if (!mounted) return;
+      final emailSent = updated['email_notification_sent'] == true;
+      final emailFailed = updated['email_notification_sent'] == false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            updated['whatsapp_notification_sent'] == false
-                ? 'Ticket $_status, but WhatsApp could not send the update. Check the reporter’s linked number and backend delivery logs.'
+            emailSent
+                ? 'Ticket $_status. Email accepted by the mail server and update added to TriageDesk notifications.'
+                : emailFailed
+                ? 'Ticket $_status and update added to TriageDesk notifications, but the reporter email could not be sent. Check backend logs.'
                 : 'Ticket $_status successfully.',
           ),
         ),
@@ -644,7 +648,37 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(color: textSecondary, fontSize: 12),
                     ),
+                    const SizedBox(height: 16),
+                    _CsatRatingCard(ticketId: widget.id),
                   ],
+
+                  const SizedBox(height: 24),
+
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Description',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: textPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: SelectableText(
+                      widget.description,
+                      style: TextStyle(color: textPrimary, height: 1.5),
+                    ),
+                  ),
 
                   const SizedBox(height: 24),
 
@@ -990,6 +1024,175 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _CsatRatingCard extends StatefulWidget {
+  final String ticketId;
+  const _CsatRatingCard({required this.ticketId});
+
+  @override
+  State<_CsatRatingCard> createState() => _CsatRatingCardState();
+}
+
+class _CsatRatingCardState extends State<_CsatRatingCard> {
+  int _selectedRating = 0;
+  final TextEditingController _feedbackController = TextEditingController();
+  bool _submitted = false;
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _feedbackController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitCsat() async {
+    if (_selectedRating == 0) return;
+    setState(() => _submitting = true);
+    try {
+      final ticketId = int.tryParse(widget.ticketId);
+      if (ticketId != null) {
+        final comment = _feedbackController.text.trim();
+        final note =
+            'CSAT Rating: $_selectedRating/5${comment.isNotEmpty ? ' - $comment' : ''}';
+        await ApiService.addTicketNote(ticketId: ticketId, note: note);
+      }
+      if (!mounted) return;
+      setState(() {
+        _submitted = true;
+        _submitting = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thank you for your feedback!')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not submit rating: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (_submitted) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE0F3EA),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFF1E7A50).withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle_rounded, color: Color(0xFF1E7A50)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rating submitted successfully',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E7A50),
+                    ),
+                  ),
+                  Text(
+                    'You rated this support experience $_selectedRating/5 star${_selectedRating == 1 ? '' : 's'}.',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF1E7A50),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'How was your support experience?',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Rate the resolution quality to help our IT team improve.',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 1; i <= 5; i++)
+                IconButton(
+                  onPressed: _submitting
+                      ? null
+                      : () => setState(() => _selectedRating = i),
+                  icon: Icon(
+                    i <= _selectedRating
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    color: i <= _selectedRating
+                        ? const Color(0xFFE8A13A)
+                        : theme.colorScheme.onSurfaceVariant,
+                    size: 32,
+                  ),
+                ),
+            ],
+          ),
+          if (_selectedRating > 0) ...[
+            const SizedBox(height: 10),
+            TextField(
+              controller: _feedbackController,
+              decoration: const InputDecoration(
+                hintText: 'Add an optional comment...',
+                isDense: true,
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _submitting ? null : _submitCsat,
+                child: _submitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Submit rating'),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

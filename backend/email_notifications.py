@@ -13,7 +13,7 @@ def _send_ticket_email(
     recipient: str,
     subject: str,
     body: str,
-) -> None:
+) -> bool:
     if recipient.casefold().endswith("@triagedesk.guest"):
         logger.info(
             "Email notification for ticket %s was skipped: %s is a "
@@ -21,7 +21,7 @@ def _send_ticket_email(
             ticket.ticket_number,
             recipient,
         )
-        return
+        return False
     try:
         send_email(recipient, subject, body)
     except Exception:
@@ -30,6 +30,8 @@ def _send_ticket_email(
             ticket.ticket_number,
             recipient,
         )
+        return False
+    return True
 
 
 def notify_ticket_created(db: Session, ticket: Ticket) -> None:
@@ -118,7 +120,7 @@ def notify_reporter_public_reply(
         )
 
 
-def notify_reporter_resolved(db: Session, ticket: Ticket) -> None:
+def notify_reporter_resolved(db: Session, ticket: Ticket) -> bool:
     try:
         reporter = db.get(User, ticket.reporter_id)
         if reporter is None:
@@ -126,8 +128,8 @@ def notify_reporter_resolved(db: Session, ticket: Ticket) -> None:
                 "Could not email the reporter for ticket %s: user not found.",
                 ticket.ticket_number,
             )
-            return
-        _send_ticket_email(
+            return False
+        return _send_ticket_email(
             ticket,
             reporter.email,
             f"Ticket {ticket.ticket_number} resolved",
@@ -143,3 +145,4 @@ def notify_reporter_resolved(db: Session, ticket: Ticket) -> None:
             "Could not prepare a resolution email for ticket %s.",
             ticket.ticket_number,
         )
+        return False

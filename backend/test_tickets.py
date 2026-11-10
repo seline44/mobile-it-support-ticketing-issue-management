@@ -313,8 +313,14 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertEqual(result["status"], "Open")
 
     def test_resolution_sends_reporter_email(self):
-        with patch("tickets.notify_reporter_resolved") as send_email:
-            update_ticket_status(
+        with (
+            patch(
+                "tickets.notify_reporter_resolved",
+                return_value=True,
+            ) as send_email,
+            patch("tickets.send_reporter_whatsapp_update"),
+        ):
+            result = update_ticket_status(
                 self.ticket.id,
                 StatusUpdate(
                     status="Resolved",
@@ -325,6 +331,14 @@ class TicketCompletionTests(unittest.TestCase):
             )
 
         send_email.assert_called_once_with(self.db, self.ticket)
+        self.assertTrue(result["email_notification_sent"])
+        notifications = list_notifications(50, self.db, self.reporter)
+        self.assertEqual(len(notifications), 1)
+        self.assertEqual(notifications[0]["action"], "Ticket resolved")
+        self.assertIn(
+            "Replaced the faulty power adapter.",
+            notifications[0]["details"],
+        )
 
     def test_accepting_ticket_sends_generic_in_progress_whatsapp(self):
         self.db.add(

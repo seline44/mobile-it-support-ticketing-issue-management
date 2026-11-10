@@ -107,12 +107,13 @@ class EmailNotificationTests(unittest.TestCase):
             self.technician,
             "Please try starting the laptop again.",
         )
-        notify_reporter_resolved(self.db, self.ticket)
+        resolved_email_sent = notify_reporter_resolved(self.db, self.ticket)
 
         self.assertEqual(send_email.call_count, 2)
         self.assertEqual(send_email.call_args_list[0].args[0], self.reporter.email)
         self.assertIn("Please try starting the laptop again.", send_email.call_args_list[0].args[2])
         self.assertIn("Replaced the power adapter.", send_email.call_args_list[1].args[2])
+        self.assertTrue(resolved_email_sent)
 
     @patch("email_notifications.send_email")
     def test_whatsapp_guest_reporter_is_not_emailed(self, send_email):
@@ -130,7 +131,8 @@ class EmailNotificationTests(unittest.TestCase):
     )
     def test_delivery_failure_does_not_raise(self, _send_email):
         with self.assertLogs("email_notifications", level="ERROR"):
-            notify_reporter_resolved(self.db, self.ticket)
+            sent = notify_reporter_resolved(self.db, self.ticket)
+        self.assertFalse(sent)
 
 
 if __name__ == "__main__":

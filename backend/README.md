@@ -81,6 +81,9 @@ approved Technicians), when support staff post a public reply, and when a ticket
 is resolved or closed. Private staff notes are not emailed. Delivery errors are
 logged and do not undo a saved ticket. WhatsApp guest accounts without a real
 email address can still receive WhatsApp messages, but cannot receive email.
+Status and resolution updates are also recorded in ticket activity and the
+Reporter notification feed in TriageDesk; email delivery is reported separately
+from WhatsApp delivery.
 
 For Gmail, enable 2-Step Verification on the sending Google account and create
 an App Password. Use the App Password rather than the account's normal

@@ -446,6 +446,7 @@ def update_ticket_status(
     )
 
     whatsapp_notification_sent = None
+    email_notification_sent = None
     try:
         if note_text:
             db.add(
@@ -474,7 +475,7 @@ def update_ticket_status(
                 or old_resolution != ticket.resolution
             )
         ):
-            notify_reporter_resolved(db, ticket)
+            email_notification_sent = notify_reporter_resolved(db, ticket)
         if (
             ticket.status in WHATSAPP_NOTIFIED_STATUSES | {"Closed"}
             and (
@@ -495,6 +496,7 @@ def update_ticket_status(
             )
         result = serialize_ticket(db, ticket)
         result["whatsapp_notification_sent"] = whatsapp_notification_sent
+        result["email_notification_sent"] = email_notification_sent
         return result
     except Exception:
         db.rollback()

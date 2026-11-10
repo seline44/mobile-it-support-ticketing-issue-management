@@ -2,6 +2,59 @@ import 'package:flutter/material.dart';
 import '../theme/td_theme.dart';
 import '../widgets/triagedesk_logo.dart';
 
+class TdSupportStatusBanner extends StatelessWidget {
+  const TdSupportStatusBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final isWeekday = now.weekday >= DateTime.monday && now.weekday <= DateTime.friday;
+    final isWorkingHours = now.hour >= 8 && now.hour < 18;
+    final isOnline = isWeekday && isWorkingHours;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: isOnline
+            ? const Color(0xFFE0F3EA)
+            : const Color(0xFFFDF1DC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isOnline
+              ? const Color(0xFF1E7A50).withValues(alpha: 0.3)
+              : const Color(0xFF9A6112).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: isOnline ? const Color(0xFF2E9D6B) : const Color(0xFFE8A13A),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              isOnline
+                  ? 'IT Helpdesk is online · Typically replies in 5 mins'
+                  : 'IT Helpdesk is offline · Reopens tomorrow at 8:00 AM',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isOnline ? const Color(0xFF1E7A50) : const Color(0xFF9A6112),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class TdBackButton extends StatelessWidget {
   final bool onDark;
   final String tooltip;
@@ -527,91 +580,22 @@ class TdActivityItem extends StatelessWidget {
 }
 
 Future<bool> showTdSignOutDialog(BuildContext context) async {
-  final theme = Theme.of(context);
-  final colors = theme.colorScheme;
   final result = await showDialog<bool>(
     context: context,
-    builder: (ctx) => Dialog(
-      backgroundColor: colors.surface,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: colors.outlineVariant),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-              child: Text(
-                'Sign out?',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: colors.error,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-              child: Text(
-                'Are you sure you want to sign out?',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colors.onSurface,
-                  height: 1.4,
-                ),
-              ),
-            ),
-            Divider(height: 1, thickness: 1, color: colors.outlineVariant),
-            SizedBox(
-              height: 54,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: colors.primary,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.only(
-                            bottomLeft: Radius.circular(20),
-                          ),
-                        ),
-                      ),
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                  VerticalDivider(
-                    width: 1,
-                    thickness: 1,
-                    color: colors.outlineVariant,
-                  ),
-                  Expanded(
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: colors.error,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.only(
-                            bottomRight: Radius.circular(20),
-                          ),
-                        ),
-                      ),
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text(
-                        'Confirm',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+    builder: (ctx) => AlertDialog(
+      title: const Text('Sign out?'),
+      content: const Text('Are you sure you want to sign out?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
         ),
-      ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Confirm'),
+        ),
+      ],
     ),
   );
   return result ?? false;

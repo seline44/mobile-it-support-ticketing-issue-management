@@ -40,6 +40,7 @@ class TicketResponse(BaseModel):
     updated_at: datetime
     resolved_at: datetime | None
     whatsapp_notification_sent: bool | None = None
+    email_notification_sent: bool | None = None
 
 
 class StatusUpdate(BaseModel):
