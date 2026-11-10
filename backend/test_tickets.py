@@ -198,7 +198,10 @@ class TicketCompletionTests(unittest.TestCase):
         )
         self.db.commit()
 
-        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+        with (
+            patch("tickets.send_reporter_whatsapp_update") as send_update,
+            patch("tickets.notify_reporter_public_reply") as send_email,
+        ):
             send_update.return_value = True
             reply = add_ticket_note(
                 self.ticket.id,
@@ -211,6 +214,12 @@ class TicketCompletionTests(unittest.TestCase):
             )
 
         send_update.assert_called_once()
+        send_email.assert_called_once_with(
+            self.db,
+            self.ticket,
+            self.technician,
+            "Please try signing in again.",
+        )
         self.assertIn("Support team reply", send_update.call_args.args[2])
         self.assertIn("Please try signing in again.", send_update.call_args.args[2])
         self.assertFalse(reply.is_internal)
@@ -222,6 +231,20 @@ class TicketCompletionTests(unittest.TestCase):
             [note["note"] for note in reporter_notes],
             ["Please try signing in again."],
         )
+
+    def test_internal_staff_note_does_not_send_email(self):
+        from schemas import NoteCreate
+        from tickets import add_ticket_note
+
+        with patch("tickets.notify_reporter_public_reply") as send_email:
+            add_ticket_note(
+                self.ticket.id,
+                NoteCreate(note="Internal investigation note."),
+                self.db,
+                self.technician,
+            )
+
+        send_email.assert_not_called()
 
     def test_reporter_cannot_create_an_internal_note(self):
         from schemas import NoteCreate
@@ -263,7 +286,10 @@ class TicketCompletionTests(unittest.TestCase):
         )
         self.db.commit()
 
-        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+        with (
+            patch("tickets.send_reporter_whatsapp_update") as send_update,
+            patch("tickets.notify_ticket_created") as send_email,
+        ):
             result = create_ticket(
                 TicketCreate(
                     title="Email is unavailable",
@@ -277,10 +303,28 @@ class TicketCompletionTests(unittest.TestCase):
             )
 
         send_update.assert_called_once()
+        send_email.assert_called_once_with(
+            self.db,
+            self.db.get(Ticket, result["id"]),
+        )
         message = send_update.call_args.args[2]
         self.assertIn("is open", message)
         self.assertIn("waiting for a technician", message)
         self.assertEqual(result["status"], "Open")
+
+    def test_resolution_sends_reporter_email(self):
+        with patch("tickets.notify_reporter_resolved") as send_email:
+            update_ticket_status(
+                self.ticket.id,
+                StatusUpdate(
+                    status="Resolved",
+                    resolution="Replaced the faulty power adapter.",
+                ),
+                self.db,
+                self.technician,
+            )
+
+        send_email.assert_called_once_with(self.db, self.ticket)
 
     def test_accepting_ticket_sends_generic_in_progress_whatsapp(self):
         self.db.add(

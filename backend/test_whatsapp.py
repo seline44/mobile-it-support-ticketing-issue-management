@@ -83,13 +83,15 @@ class WhatsAppIntegrationTests(unittest.TestCase):
         )
 
     def test_issue_description_creates_ticket_immediately(self):
-        response = self.send(
-            "wamid.1",
-            "I cannot connect to the lab Wi-Fi. I tried restarting "
-            "the laptop, but the issue continues.",
-        )
+        with patch("whatsapp.notify_ticket_created") as send_email:
+            response = self.send(
+                "wamid.1",
+                "I cannot connect to the lab Wi-Fi. I tried restarting "
+                "the laptop, but the issue continues.",
+            )
 
         ticket = self.db.query(Ticket).one()
+        send_email.assert_called_once_with(self.db, ticket)
         self.assertIn(ticket.ticket_number, response)
         self.assertIn("logged your issue", response)
         self.assertIn("Priority", response)

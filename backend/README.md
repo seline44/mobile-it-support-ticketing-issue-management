@@ -71,8 +71,32 @@ for production webhooks; free services can sleep and delay webhook responses.
 After deployment, verify the service's `/` endpoint responds. The WhatsApp
 webhook URL is
 `https://<your-render-service>.onrender.com/webhooks/whatsapp`.
-Configure SMTP variables separately if password-reset email delivery is
-needed.
+Configure SMTP as described below for password resets and ticket email
+notifications.
+
+## Email notifications
+
+The backend sends email after ticket creation (to the Reporter and all active,
+approved Technicians), when support staff post a public reply, and when a ticket
+is resolved or closed. Private staff notes are not emailed. Delivery errors are
+logged and do not undo a saved ticket. WhatsApp guest accounts without a real
+email address can still receive WhatsApp messages, but cannot receive email.
+
+For Gmail, enable 2-Step Verification on the sending Google account and create
+an App Password. Use the App Password rather than the account's normal
+password. Add these values to the local `backend/.env` file for development or
+the Render service's environment settings for deployment:
+
+| Name | Value |
+| --- | --- |
+| `SMTP_USERNAME` | Full Gmail address used to send notifications |
+| `SMTP_PASSWORD` | Google App Password |
+| `SMTP_FROM_EMAIL` | Optional sender address; defaults to `SMTP_USERNAME` |
+| `SMTP_HOST` | Optional; defaults to `smtp.gmail.com` |
+| `SMTP_PORT` | Optional; defaults to `587` (STARTTLS) |
+
+Keep the App Password private and out of source control. The SMTP settings
+already used for password-reset email are shared with these notifications.
 
 ## Meta WhatsApp Cloud API setup
 

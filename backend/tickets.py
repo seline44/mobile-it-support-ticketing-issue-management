@@ -8,6 +8,11 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user, require_roles
 from database import get_db
+from email_notifications import (
+    notify_reporter_public_reply,
+    notify_reporter_resolved,
+    notify_ticket_created,
+)
 from models import Ticket, TicketHistory, TicketNote, User, WhatsAppContact
 from schemas import (
     NoteCreate,
@@ -219,6 +224,7 @@ def create_ticket(
         )
         db.commit()
         db.refresh(ticket)
+        notify_ticket_created(db, ticket)
         send_reporter_whatsapp_update(
             db,
             ticket,
@@ -462,6 +468,14 @@ def update_ticket_status(
         db.commit()
         db.refresh(ticket)
         if (
+            ticket.status in {"Resolved", "Closed"}
+            and (
+                old_status not in {"Resolved", "Closed"}
+                or old_resolution != ticket.resolution
+            )
+        ):
+            notify_reporter_resolved(db, ticket)
+        if (
             ticket.status in WHATSAPP_NOTIFIED_STATUSES | {"Closed"}
             and (
                 old_status != ticket.status
@@ -628,6 +642,7 @@ def add_ticket_note(
         db.commit()
         db.refresh(note)
         if user.role in {"Technician", "Administrator"} and not note.is_internal:
+            notify_reporter_public_reply(db, ticket, user, note_text)
             whatsapp_notification_sent = bool(
                 send_reporter_whatsapp_update(
                     db,

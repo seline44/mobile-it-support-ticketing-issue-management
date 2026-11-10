@@ -18,6 +18,7 @@ from twilio.request_validator import RequestValidator
 from twilio.twiml.messaging_response import MessagingResponse
 
 from database import get_db
+from email_notifications import notify_ticket_created
 from models import (
     Ticket,
     TicketNote,
@@ -348,13 +349,16 @@ def _complete_pending_ticket(
     db: Session,
     user: User,
     conversation: WhatsAppConversation,
-) -> str:
+) -> tuple[str, Ticket | None]:
     description = conversation.description.strip()
     if not _has_issue_description(description):
-        return "What’s happening? A short description is enough and I’ll log it."
+        return (
+            "What’s happening? A short description is enough and I’ll log it.",
+            None,
+        )
     ticket = _create_quick_ticket(db, user, description)
     db.delete(conversation)
-    return _ticket_created_response(ticket)
+    return _ticket_created_response(ticket), ticket
 
 
 def process_incoming_message(
@@ -370,6 +374,7 @@ def process_incoming_message(
 
     phone_number = normalize_phone_number(sender_number)
     response_text: str
+    created_ticket: Ticket | None = None
     contact = db.get(WhatsAppContact, phone_number)
 
     if message_type != "text":
@@ -492,15 +497,15 @@ def process_incoming_message(
                     )
             elif conversation is not None and _is_thank_you(message_text):
                 if conversation.step in {"category", "device", "impact", "urgency"}:
-                    response_text = (
-                        "You’re welcome! 😊 "
-                        + _complete_pending_ticket(db, user, conversation)
+                    completion, created_ticket = _complete_pending_ticket(
+                        db, user, conversation
                     )
+                    response_text = "You’re welcome! 😊 " + completion
                 else:
                     response_text = "You’re welcome! 😊 Take your time."
             elif conversation is not None and _is_greeting(message_text):
                 if conversation.step in {"category", "device", "impact", "urgency"}:
-                    response_text = _complete_pending_ticket(
+                    response_text, created_ticket = _complete_pending_ticket(
                         db, user, conversation
                     )
                 else:
@@ -514,7 +519,7 @@ def process_incoming_message(
                 "impact",
                 "urgency",
             }:
-                response_text = _complete_pending_ticket(
+                response_text, created_ticket = _complete_pending_ticket(
                     db, user, conversation
                 )
             elif conversation is None:
@@ -559,10 +564,12 @@ def process_incoming_message(
                                 "characters or fewer."
                             )
                         else:
-                            ticket = _create_quick_ticket(
+                            created_ticket = _create_quick_ticket(
                                 db, user, new_description
                             )
-                            response_text = _ticket_created_response(ticket)
+                            response_text = _ticket_created_response(
+                                created_ticket
+                            )
                     else:
                         conversation = WhatsAppConversation(
                             phone_number=phone_number,
@@ -663,10 +670,10 @@ def process_incoming_message(
                             "description is enough and I’ll create a ticket."
                         )
                     else:
-                        ticket = _create_quick_ticket(
+                        created_ticket = _create_quick_ticket(
                             db, user, message_text
                         )
-                        response_text = _ticket_created_response(ticket)
+                        response_text = _ticket_created_response(created_ticket)
             elif conversation.step == "description":
                 if not _has_issue_description(message_text):
                     response_text = (
@@ -679,9 +686,11 @@ def process_incoming_message(
                         "or fewer."
                     )
                 else:
-                    ticket = _create_quick_ticket(db, user, message_text)
+                    created_ticket = _create_quick_ticket(
+                        db, user, message_text
+                    )
                     db.delete(conversation)
-                    response_text = _ticket_created_response(ticket)
+                    response_text = _ticket_created_response(created_ticket)
             else:
                 db.delete(conversation)
                 response_text = (
@@ -702,6 +711,8 @@ def process_incoming_message(
     except Exception:
         db.rollback()
         raise
+    if created_ticket is not None:
+        notify_ticket_created(db, created_ticket)
     return response_text
 
 
