@@ -4,6 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,9 +13,11 @@ from database import get_db
 from models import (
     Ticket,
     TicketHistory,
+    TicketNote,
     User,
     WhatsAppContact,
     WhatsAppConversation,
+    WhatsAppMessage,
 )
 
 router = APIRouter(prefix="/admin", tags=["Administration"])
@@ -26,11 +29,16 @@ class PendingUserResponse(BaseModel):
     email: str
     role: str
     approval_status: str
+    is_active: bool
     created_at: object
 
 
 class ApprovalRequest(BaseModel):
     approval_status: Literal["Approved", "Rejected"]
+
+
+class AccountStatusRequest(BaseModel):
+    is_active: bool
 
 
 class ApprovalResponse(BaseModel):
@@ -39,6 +47,18 @@ class ApprovalResponse(BaseModel):
     email: str
     role: str
     approval_status: str
+    message: str
+
+
+class DeleteUserResponse(BaseModel):
+    id: int
+    deleted_tickets: int
+    message: str
+
+
+class AccountStatusResponse(BaseModel):
+    id: int
+    is_active: bool
     message: str
 
 
@@ -174,6 +194,185 @@ def update_user_approval(
         "role": user.role,
         "approval_status": user.approval_status,
         "message": message,
+    }
+
+
+@router.patch(
+    "/users/{user_id}/active",
+    response_model=AccountStatusResponse,
+)
+def update_user_active_status(
+    request: AccountStatusRequest,
+    user_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("Administrator")),
+):
+    if user_id == admin.id and not request.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot lock your own account.",
+        )
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.role == "Administrator" and not request.is_active and user.is_active:
+        another_active_admin = (
+            db.query(User)
+            .filter(
+                User.id != user.id,
+                User.role == "Administrator",
+                User.is_active.is_(True),
+                User.approval_status == "Approved",
+            )
+            .first()
+        )
+        if another_active_admin is None:
+            raise HTTPException(
+                status_code=409,
+                detail="The last active administrator cannot be locked.",
+            )
+
+    user.is_active = request.is_active
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        raise
+
+    action = "unlocked" if user.is_active else "locked"
+    return {
+        "id": user.id,
+        "is_active": user.is_active,
+        "message": f"Account {action} successfully.",
+    }
+
+
+@router.delete("/users/{user_id}", response_model=DeleteUserResponse)
+def delete_user(
+    user_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("Administrator")),
+):
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot delete your own account.",
+        )
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.role == "Administrator":
+        another_active_admin = (
+            db.query(User)
+            .filter(
+                User.id != user.id,
+                User.role == "Administrator",
+                User.is_active.is_(True),
+                User.approval_status == "Approved",
+            )
+            .first()
+        )
+        if another_active_admin is None:
+            raise HTTPException(
+                status_code=409,
+                detail="The last active administrator cannot be deleted.",
+            )
+
+    ticket_ids = [
+        row[0]
+        for row in db.query(Ticket.id)
+        .filter(Ticket.reporter_id == user.id)
+        .all()
+    ]
+    phone_numbers = [
+        row[0]
+        for row in db.query(WhatsAppContact.phone_number)
+        .filter(WhatsAppContact.user_id == user.id)
+        .all()
+    ]
+
+    try:
+        db.query(WhatsAppContact).filter(
+            WhatsAppContact.linked_by_user_id == user.id
+        ).update(
+            {WhatsAppContact.linked_by_user_id: admin.id},
+            synchronize_session=False,
+        )
+
+        conversation_filter = []
+        if phone_numbers:
+            conversation_filter.append(
+                WhatsAppConversation.phone_number.in_(phone_numbers)
+            )
+            db.query(WhatsAppMessage).filter(
+                WhatsAppMessage.phone_number.in_(phone_numbers)
+            ).delete(synchronize_session=False)
+        if ticket_ids:
+            conversation_filter.append(
+                WhatsAppConversation.ticket_id.in_(ticket_ids)
+            )
+            db.query(TicketNote).filter(
+                TicketNote.ticket_id.in_(ticket_ids)
+            ).delete(synchronize_session=False)
+            db.query(TicketHistory).filter(
+                TicketHistory.ticket_id.in_(ticket_ids)
+            ).delete(synchronize_session=False)
+
+        if conversation_filter:
+            db.query(WhatsAppConversation).filter(
+                or_(*conversation_filter)
+            ).delete(synchronize_session=False)
+
+        db.query(WhatsAppContact).filter(
+            WhatsAppContact.user_id == user.id
+        ).delete(synchronize_session=False)
+
+        if ticket_ids:
+            db.query(Ticket).filter(Ticket.id.in_(ticket_ids)).delete(
+                synchronize_session=False
+            )
+
+        db.query(Ticket).filter(
+            Ticket.assigned_technician_id == user.id
+        ).update(
+            {Ticket.assigned_technician_id: None},
+            synchronize_session=False,
+        )
+        db.query(TicketNote).filter(
+            TicketNote.author_id == user.id
+        ).delete(synchronize_session=False)
+        db.query(TicketHistory).filter(
+            TicketHistory.actor_id == user.id
+        ).update(
+            {TicketHistory.actor_id: None},
+            synchronize_session=False,
+        )
+
+        db.delete(user)
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="The user could not be deleted because related records remain.",
+        ) from error
+    except Exception:
+        db.rollback()
+        raise
+
+    deleted_tickets = len(ticket_ids)
+    return {
+        "id": user_id,
+        "deleted_tickets": deleted_tickets,
+        "message": (
+            f"User and {deleted_tickets} associated "
+            f"{'ticket' if deleted_tickets == 1 else 'tickets'} deleted."
+        ),
     }
 
 

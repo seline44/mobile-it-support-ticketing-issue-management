@@ -213,32 +213,15 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
     }
   }
 
-  void _confirmSignOut() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Sign Out'),
-        content: const Text('Are you sure you want to sign out of TriageDesk?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                (route) => false,
-              );
-            },
-            child: const Text('Sign Out'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showTdSignOutDialog(context);
+    if (confirmed && mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 
   @override
@@ -258,77 +241,81 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
         title: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
-            child: Row(
-              children: [
-                const TriageDeskLogo(size: 34),
-                const SizedBox(width: 8),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'Triage',
-                        style: TextStyle(color: colors.onSurface),
-                      ),
-                      TextSpan(
-                        text: 'Desk',
-                        style: TextStyle(color: colors.primary),
-                      ),
-                    ],
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: Row(
+                children: [
+                  const TriageDeskLogo(size: 42),
+                  const SizedBox(width: 8),
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'Triage',
+                          style: TextStyle(color: colors.onSurface),
+                        ),
+                        TextSpan(
+                          text: 'Desk',
+                          style: TextStyle(color: colors.primary),
+                        ),
+                      ],
+                    ),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
                   ),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: 'Notifications',
-                  onPressed: _openNotifications,
-                  icon: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      const Icon(Icons.notifications_none_rounded, size: 23),
-                      if (_unreadNotificationIds.isNotEmpty)
-                        Positioned(
-                          right: -1,
-                          top: -1,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFEF5B64),
-                              shape: BoxShape.circle,
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Notifications',
+                    onPressed: _openNotifications,
+                    icon: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.notifications_none_rounded, size: 23),
+                        if (_unreadNotificationIds.isNotEmpty)
+                          Positioned(
+                            right: -1,
+                            top: -1,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFEF5B64),
+                                shape: BoxShape.circle,
+                              ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 7),
-                InkWell(
-                  onTap: () => setState(() => _currentIndex = 4),
-                  customBorder: const CircleBorder(),
-                  child: CircleAvatar(
-                    radius: 17,
-                    backgroundColor: colors.primary,
-                    child: Text(
-                      initials,
-                      style: TextStyle(
-                        color: colors.onPrimary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
+                  const SizedBox(width: 7),
+                  InkWell(
+                    onTap: () => setState(() => _currentIndex = 4),
+                    customBorder: const CircleBorder(),
+                    child: CircleAvatar(
+                      radius: 17,
+                      backgroundColor: colors.primary,
+                      child: Text(
+                        initials,
+                        style: TextStyle(
+                          color: colors.onPrimary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-              ],
+                  const SizedBox(width: 16),
+                ],
+              ),
             ),
           ),
         ),
       ),
-      body: Center(
+      body: Align(
+        alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: _buildCurrentTabBody(),

@@ -313,6 +313,34 @@ class ApiService {
     throw Exception(_error(decoded, 'Could not load users'));
   }
 
+  static Future<Map<String, dynamic>> deleteUser({required int userId}) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/admin/users/$userId'),
+      headers: _headers,
+    );
+    final decoded = _decode(response);
+    if (response.statusCode == 200 && decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    throw Exception(_error(decoded, 'Could not delete user'));
+  }
+
+  static Future<Map<String, dynamic>> updateUserActiveStatus({
+    required int userId,
+    required bool isActive,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/admin/users/$userId/active'),
+      headers: _headers,
+      body: jsonEncode({'is_active': isActive}),
+    );
+    final decoded = _decode(response);
+    if (response.statusCode == 200 && decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    throw Exception(_error(decoded, 'Could not update account status'));
+  }
+
   static Future<Map<String, dynamic>> linkWhatsAppNumber({
     required int userId,
     required String phoneNumber,

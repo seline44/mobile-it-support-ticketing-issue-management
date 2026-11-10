@@ -14,6 +14,7 @@ import 'package:triagedesk/screens/register_screen.dart';
 import 'package:triagedesk/screens/reporter_dashboard.dart';
 import 'package:triagedesk/services/api_service.dart';
 import 'package:triagedesk/theme/app_theme.dart';
+import 'package:triagedesk/widgets/td_widgets.dart';
 import 'package:triagedesk/widgets/triagedesk_logo.dart';
 
 void main() {
@@ -39,6 +40,40 @@ void main() {
   test('Teal is the primary color across light and dark themes', () {
     expect(AppTheme.lightTheme.colorScheme.primary, AppTheme.deepTeal);
     expect(AppTheme.darkTheme.colorScheme.primary, AppTheme.accentTeal);
+  });
+
+  testWidgets('sign-out confirmation uses compact themed actions', (
+    WidgetTester tester,
+  ) async {
+    bool? confirmed;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                confirmed = await showTdSignOutDialog(context);
+              },
+              child: const Text('Open dialog'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open dialog'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sign out?'), findsOneWidget);
+    expect(find.text('Are you sure you want to sign out?'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Confirm'), findsOneWidget);
+    expect(find.byIcon(Icons.logout_rounded), findsNothing);
+
+    await tester.tap(find.text('Confirm'));
+    await tester.pumpAndSettle();
+    expect(confirmed, isTrue);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('TriageDeskApp smoke test', (WidgetTester tester) async {
@@ -284,6 +319,8 @@ void main() {
   ) async {
     String? linkedPhone;
     String? updatedApproval;
+    int? deletedUserId;
+    final activeStatusChanges = <bool>[];
     final client = MockClient((request) async {
       if (request.url.path == '/auth/login') {
         return http.Response(
@@ -330,6 +367,9 @@ void main() {
               'email': 'amina@example.com',
               'role': 'Reporter',
               'approval_status': 'Approved',
+              'is_active': activeStatusChanges.isEmpty
+                  ? true
+                  : activeStatusChanges.last,
             },
             {
               'id': 8,
@@ -380,6 +420,33 @@ void main() {
             (jsonDecode(request.body) as Map<String, dynamic>)['phone_number']
                 as String;
         return http.Response(jsonEncode({'phone_number': linkedPhone}), 200);
+      }
+      if (request.url.path == '/admin/users/7' && request.method == 'DELETE') {
+        deletedUserId = 7;
+        return http.Response(
+          jsonEncode({
+            'id': 7,
+            'deleted_tickets': 0,
+            'message': 'User and 0 associated tickets deleted.',
+          }),
+          200,
+        );
+      }
+      if (request.url.path == '/admin/users/7/active' &&
+          request.method == 'PATCH') {
+        final isActive =
+            (jsonDecode(request.body) as Map<String, dynamic>)['is_active']
+                as bool;
+        activeStatusChanges.add(isActive);
+        return http.Response(
+          jsonEncode({
+            'id': 7,
+            'is_active': isActive,
+            'message':
+                'Account ${isActive ? 'unlocked' : 'locked'} successfully.',
+          }),
+          200,
+        );
       }
       return http.Response('Not found', 404);
     });
@@ -453,6 +520,35 @@ void main() {
       await tester.tap(find.text('Link number'));
       await tester.pumpAndSettle();
       expect(linkedPhone, '+254794045207');
+
+      await tester.ensureVisible(find.text('Amina Reporter').first);
+      await tester.ensureVisible(find.text('Lock account').first);
+      await tester.tap(find.text('Lock account').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Lock account?'), findsOneWidget);
+      await tester.tap(find.text('Lock').last);
+      await tester.pumpAndSettle();
+      expect(activeStatusChanges, [false]);
+      expect(find.text('Locked'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Unlock account'));
+      await tester.tap(find.text('Unlock account'));
+      await tester.pumpAndSettle();
+      expect(find.text('Unlock account?'), findsOneWidget);
+      await tester.tap(find.text('Unlock').last);
+      await tester.pumpAndSettle();
+      expect(activeStatusChanges, [false, true]);
+      expect(find.text('Locked'), findsNothing);
+
+      await tester.ensureVisible(find.text('Delete user').first);
+      await tester.tap(find.text('Delete user').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Delete user permanently?'), findsOneWidget);
+      expect(find.textContaining('all tickets they created'), findsOneWidget);
+      await tester.tap(find.text('Delete user').last);
+      await tester.pumpAndSettle();
+      expect(deletedUserId, 7);
+      expect(find.text('Amina Reporter'), findsNothing);
 
       await tester.pageBack();
       await tester.pumpAndSettle();

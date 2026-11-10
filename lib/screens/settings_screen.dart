@@ -6,6 +6,7 @@ import '../services/theme_service.dart';
 import '../services/whatsapp_contact.dart';
 import '../theme/app_theme.dart';
 import '../widgets/triagedesk_logo.dart';
+import '../widgets/td_widgets.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -33,32 +34,15 @@ class SettingsScreen extends StatelessWidget {
     }
   }
 
-  void _confirmSignOut(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Sign Out'),
-        content: const Text('Are you sure you want to sign out of TriageDesk?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              Navigator.pop(ctx);
-              ApiService.logout();
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                (route) => false,
-              );
-            },
-            child: const Text('Sign Out'),
-          ),
-        ],
-      ),
+  Future<void> _confirmSignOut(BuildContext context) async {
+    final confirmed = await showTdSignOutDialog(context);
+    if (!confirmed || !context.mounted) return;
+
+    ApiService.logout();
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
     );
   }
 

@@ -18,6 +18,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   String? _errorMessage;
   String _selectedFilter = 'All';
   final Set<int> _updatingUserIds = {};
+  final Set<int> _deletingUserIds = {};
   static const _filters = ['All', 'Pending', 'Approved', 'Rejected'];
 
   @override
@@ -161,6 +162,143 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         _updatingUserIds.remove(userId);
       });
       _showMessage(result['message']?.toString() ?? 'WhatsApp number linked.');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _updatingUserIds.remove(userId));
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _deleteUser(Map<String, dynamic> user) async {
+    final userId = _userId(user);
+    if (userId == null) {
+      _showMessage('Could not identify this account.');
+      return;
+    }
+
+    final name = (user['full_name'] ?? user['email'] ?? 'this user').toString();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(
+          Icons.delete_forever_rounded,
+          color: Theme.of(dialogContext).colorScheme.error,
+          size: 32,
+        ),
+        title: const Text('Delete user permanently?'),
+        content: Text(
+          'Delete $name and all tickets they created? This cannot be undone. '
+          'Their assignments on other users’ tickets will be cleared.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.delete_forever_rounded, size: 18),
+            label: const Text('Delete user'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _updatingUserIds.add(userId);
+      _deletingUserIds.add(userId);
+    });
+    try {
+      final result = await ApiService.deleteUser(userId: userId);
+      if (!mounted) return;
+      setState(() {
+        _users.removeWhere((item) {
+          if (item is! Map) return false;
+          final itemId = item['id'] ?? item['user_id'];
+          return itemId.toString() == userId.toString();
+        });
+        _updatingUserIds.remove(userId);
+        _deletingUserIds.remove(userId);
+      });
+      _showMessage(result['message']?.toString() ?? 'User deleted.');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _updatingUserIds.remove(userId);
+        _deletingUserIds.remove(userId);
+      });
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _setUserLocked(
+    Map<String, dynamic> user, {
+    required bool locked,
+  }) async {
+    final userId = _userId(user);
+    if (userId == null) {
+      _showMessage('Could not identify this account.');
+      return;
+    }
+
+    final name = (user['full_name'] ?? user['email'] ?? 'this user').toString();
+    final action = locked ? 'Lock' : 'Unlock';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(
+          locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+          color: Theme.of(dialogContext).colorScheme.primary,
+          size: 30,
+        ),
+        title: Text('$action account?'),
+        content: Text(
+          locked
+              ? 'Lock $name? They will not be able to sign in until an '
+                    'administrator unlocks the account.'
+              : 'Unlock $name and allow them to sign in again?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _updatingUserIds.add(userId));
+    try {
+      final result = await ApiService.updateUserActiveStatus(
+        userId: userId,
+        isActive: !locked,
+      );
+      if (!mounted) return;
+      setState(() {
+        for (final item in _users) {
+          if (item is! Map) continue;
+          final itemId = item['id'] ?? item['user_id'];
+          if (itemId.toString() == userId.toString()) {
+            item['is_active'] = !locked;
+            break;
+          }
+        }
+        _updatingUserIds.remove(userId);
+      });
+      _showMessage(
+        result['message']?.toString() ??
+            'Account ${locked ? 'locked' : 'unlocked'}.',
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() => _updatingUserIds.remove(userId));
@@ -318,16 +456,21 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final theme = Theme.of(context);
     final secondaryColor = theme.colorScheme.onSurfaceVariant;
 
-    final name = (user['full_name'] ??
-            user['name'] ??
-            user['username'] ??
-            'Unnamed user')
-        .toString();
+    final name =
+        (user['full_name'] ??
+                user['name'] ??
+                user['username'] ??
+                'Unnamed user')
+            .toString();
     final email = (user['email'] ?? 'No email provided').toString();
     final role = (user['role'] ?? 'Reporter').toString();
     final status = _approvalStatus(user);
     final userId = _userId(user);
     final isUpdating = userId != null && _updatingUserIds.contains(userId);
+    final isDeleting = userId != null && _deletingUserIds.contains(userId);
+    final currentUserId = ApiService.currentUser?['id'];
+    final isCurrentUser = currentUserId?.toString() == userId?.toString();
+    final isActive = user['is_active'] != false;
     final isPending = status.toLowerCase() == 'pending';
     final canLinkWhatsApp =
         role.toLowerCase() == 'reporter' && status.toLowerCase() == 'approved';
@@ -382,6 +525,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
             foreground: roleFg,
             showDot: false,
           ),
+          if (!isActive) ...[
+            const SizedBox(height: 8),
+            TdPill(
+              label: 'Locked',
+              background: theme.colorScheme.errorContainer,
+              foreground: theme.colorScheme.error,
+              showDot: false,
+            ),
+          ],
           if (isPending) ...[
             const SizedBox(height: 16),
             Row(
@@ -459,6 +611,45 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               ],
             ),
           ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
+            children: [
+              OutlinedButton.icon(
+                onPressed: isUpdating || userId == null || isCurrentUser
+                    ? null
+                    : () => _setUserLocked(user, locked: isActive),
+                icon: Icon(
+                  isActive
+                      ? Icons.lock_outline_rounded
+                      : Icons.lock_open_rounded,
+                  size: 18,
+                ),
+                label: Text(isActive ? 'Lock account' : 'Unlock account'),
+              ),
+              OutlinedButton.icon(
+                onPressed: isUpdating || userId == null || isCurrentUser
+                    ? null
+                    : () => _deleteUser(user),
+                icon: isDeleting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.delete_forever_rounded, size: 18),
+                label: Text(isCurrentUser ? 'Current account' : 'Delete user'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                  side: BorderSide(
+                    color: theme.colorScheme.error.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -467,7 +658,11 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   String _initials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
     if (parts.isEmpty) return 'TD';
-    if (parts.length == 1) return parts.first.substring(0, parts.first.length >= 2 ? 2 : 1).toUpperCase();
+    if (parts.length == 1) {
+      return parts.first
+          .substring(0, parts.first.length >= 2 ? 2 : 1)
+          .toUpperCase();
+    }
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 }
