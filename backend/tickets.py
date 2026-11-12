@@ -11,6 +11,7 @@ from database import get_db
 from email_notifications import (
     notify_reporter_public_reply,
     notify_reporter_resolved,
+    notify_reporter_status_update,
     notify_ticket_created,
 )
 from models import Ticket, TicketHistory, TicketNote, User, WhatsAppContact
@@ -225,11 +226,6 @@ def create_ticket(
         db.commit()
         db.refresh(ticket)
         notify_ticket_created(db, ticket)
-        send_reporter_whatsapp_update(
-            db,
-            ticket,
-            ticket_status_whatsapp_message(ticket, "Open"),
-        )
         return serialize_ticket(db, ticket)
     except Exception:
         db.rollback()
@@ -380,12 +376,22 @@ def accept_ticket(
 
     db.commit()
     db.refresh(ticket)
-    send_reporter_whatsapp_update(
+    email_notification_sent = notify_reporter_status_update(
         db,
         ticket,
-        ticket_status_whatsapp_message(ticket, "In Progress"),
+        "A technician accepted your ticket and is working on it.",
     )
-    return serialize_ticket(db, ticket)
+    whatsapp_notification_sent = bool(
+        send_reporter_whatsapp_update(
+            db,
+            ticket,
+            ticket_status_whatsapp_message(ticket, "In Progress"),
+        )
+    )
+    result = serialize_ticket(db, ticket)
+    result["whatsapp_notification_sent"] = whatsapp_notification_sent
+    result["email_notification_sent"] = email_notification_sent
+    return result
 
 
 @router.patch("/{ticket_id}/status", response_model=TicketResponse)
@@ -476,6 +482,13 @@ def update_ticket_status(
             )
         ):
             email_notification_sent = notify_reporter_resolved(db, ticket)
+        elif old_status != ticket.status:
+            email_notification_sent = notify_reporter_status_update(
+                db,
+                ticket,
+                f"Ticket status changed from {old_status} to "
+                f"{ticket.status}.",
+            )
         if (
             ticket.status in WHATSAPP_NOTIFIED_STATUSES | {"Closed"}
             and (
@@ -548,12 +561,22 @@ def reopen_ticket(
 
     db.commit()
     db.refresh(ticket)
-    send_reporter_whatsapp_update(
+    email_notification_sent = notify_reporter_status_update(
         db,
         ticket,
-        ticket_status_whatsapp_message(ticket, "Open"),
+        f"Your ticket was reopened. Reason: {reason}",
     )
-    return serialize_ticket(db, ticket)
+    whatsapp_notification_sent = bool(
+        send_reporter_whatsapp_update(
+            db,
+            ticket,
+            ticket_status_whatsapp_message(ticket, "Open"),
+        )
+    )
+    result = serialize_ticket(db, ticket)
+    result["whatsapp_notification_sent"] = whatsapp_notification_sent
+    result["email_notification_sent"] = email_notification_sent
+    return result
 
 
 @router.get(

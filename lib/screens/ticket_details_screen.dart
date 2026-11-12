@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
@@ -193,17 +195,35 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
   String? _resolution;
   bool _isSavingStatus = false;
   bool _commentIsInternal = false;
+  bool _historyLoadInProgress = false;
+  late String _title;
+  late String _description;
+  String? _assignedTechnician;
+  DateTime? _lastModifiedAt;
+  DateTime? _resolvedAt;
+  Timer? _liveUpdateTimer;
 
   @override
   void initState() {
     super.initState();
     _status = widget.status;
     _resolution = widget.resolution;
+    _title = widget.title;
+    _description = widget.description;
+    _assignedTechnician = widget.assignedTechnician;
+    _lastModifiedAt = widget.lastModifiedAt;
+    _resolvedAt = widget.resolvedAt;
     _loadHistory();
+    _liveUpdateTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _loadHistory();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _liveUpdateTimer?.cancel();
     _commentController.dispose();
     super.dispose();
   }
@@ -275,22 +295,27 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
   }
 
   Future<void> _loadHistory() async {
+    if (_historyLoadInProgress) return;
+    _historyLoadInProgress = true;
     final ticketId = int.tryParse(widget.id);
     if (ticketId == null) {
       setState(() {
         _historyError = 'Ticket activity is unavailable for this ticket ID.';
         _isLoadingHistory = false;
       });
+      _historyLoadInProgress = false;
       return;
     }
 
     try {
-      final results = await Future.wait([
+      final results = await Future.wait<dynamic>([
+        ApiService.getTicket(ticketId),
         ApiService.getTicketHistory(ticketId),
         ApiService.getTicketNotes(ticketId),
       ]);
-      final history = results[0];
-      final notes = results[1];
+      final ticket = results[0] as Map<String, dynamic>;
+      final history = results[1];
+      final notes = results[2];
       if (!mounted) return;
       final updates = <Map<String, dynamic>>[];
       for (final item in history.whereType<Map>()) {
@@ -329,6 +354,17 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
             (a['sortTime'] as DateTime).compareTo(b['sortTime'] as DateTime),
       );
       setState(() {
+        _title = ticket['title']?.toString() ?? _title;
+        _description = ticket['description']?.toString() ?? _description;
+        _status = ticket['status']?.toString() ?? _status;
+        _resolution = ticket['resolution']?.toString();
+        _assignedTechnician = ticket['assigned_technician_name']?.toString();
+        _lastModifiedAt = ticket['last_modified_at'] == null
+            ? null
+            : parseApiTimestamp(ticket['last_modified_at'].toString());
+        _resolvedAt = ticket['resolved_at'] == null
+            ? null
+            : parseApiTimestamp(ticket['resolved_at'].toString());
         _updates
           ..clear()
           ..addAll(updates);
@@ -341,6 +377,8 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
         _historyError = error.toString().replaceFirst('Exception: ', '');
         _isLoadingHistory = false;
       });
+    } finally {
+      _historyLoadInProgress = false;
     }
   }
 
@@ -556,7 +594,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              widget.title,
+                              _title,
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -599,9 +637,9 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                                     ),
                                   ),
                                 ),
-                                if (widget.lastModifiedAt != null)
+                                if (_lastModifiedAt != null)
                                   Text(
-                                    _formatHistoryTime(widget.lastModifiedAt!),
+                                    _formatHistoryTime(_lastModifiedAt!),
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: textSecondary,
@@ -678,7 +716,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                       border: Border.all(color: borderColor),
                     ),
                     child: SelectableText(
-                      widget.description,
+                      _description,
                       style: TextStyle(color: textPrimary, height: 1.5),
                     ),
                   ),
@@ -719,11 +757,11 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                           textPrimary,
                           textSecondary,
                         ),
-                        if (widget.resolvedAt != null) ...[
+                        if (_resolvedAt != null) ...[
                           const Divider(height: 20),
                           _metaRow(
                             'Resolved',
-                            tdFormatDateTime(context, widget.resolvedAt!),
+                            tdFormatDateTime(context, _resolvedAt!),
                             textPrimary,
                             textSecondary,
                           ),
@@ -731,7 +769,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                         const Divider(height: 20),
                         _metaRow(
                           'Assigned to',
-                          widget.assignedTechnician ?? 'Unassigned',
+                          _assignedTechnician ?? 'Unassigned',
                           textPrimary,
                           textSecondary,
                         ),

@@ -22,6 +22,12 @@ from tickets import (
 
 class TicketCompletionTests(unittest.TestCase):
     def setUp(self):
+        email_notifications = patch.dict(
+            "os.environ",
+            {"TICKET_EMAIL_NOTIFICATIONS_ENABLED": "false"},
+        )
+        email_notifications.start()
+        self.addCleanup(email_notifications.stop)
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(self.engine)
         self.db = Session(self.engine)
@@ -196,6 +202,14 @@ class TicketCompletionTests(unittest.TestCase):
                 linked_by_user_id=self.admin.id,
             )
         )
+        self.db.add(
+            TicketHistory(
+                ticket_id=self.ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
+            )
+        )
         self.db.commit()
 
         with (
@@ -276,7 +290,7 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertEqual(result["reporter_name"], "Ticket Reporter")
         self.assertEqual(result["reporter_phone"], "+254794045207")
 
-    def test_app_ticket_creation_sends_open_whatsapp_status(self):
+    def test_app_ticket_creation_does_not_send_whatsapp_update(self):
         self.db.add(
             WhatsAppContact(
                 phone_number="+15551234567",
@@ -302,14 +316,11 @@ class TicketCompletionTests(unittest.TestCase):
                 self.reporter,
             )
 
-        send_update.assert_called_once()
+        send_update.assert_not_called()
         send_email.assert_called_once_with(
             self.db,
             self.db.get(Ticket, result["id"]),
         )
-        message = send_update.call_args.args[2]
-        self.assertIn("is open", message)
-        self.assertIn("waiting for a technician", message)
         self.assertEqual(result["status"], "Open")
 
     def test_resolution_sends_reporter_email(self):
@@ -361,16 +372,37 @@ class TicketCompletionTests(unittest.TestCase):
             reporter_id=self.reporter.id,
         )
         self.db.add(open_ticket)
+        self.db.flush()
+        self.db.add(
+            TicketHistory(
+                ticket_id=open_ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
+            )
+        )
         self.db.commit()
 
-        with patch("tickets.send_reporter_whatsapp_update") as send_update:
+        with (
+            patch("tickets.send_reporter_whatsapp_update") as send_update,
+            patch(
+                "tickets.notify_reporter_status_update",
+                return_value=True,
+            ) as send_email,
+        ):
             result = accept_ticket(open_ticket.id, self.db, self.technician)
 
         send_update.assert_called_once()
+        send_email.assert_called_once_with(
+            self.db,
+            open_ticket,
+            "A technician accepted your ticket and is working on it.",
+        )
         message = send_update.call_args.args[2]
         self.assertIn("A technician has received your ticket", message)
         self.assertNotIn(self.technician.full_name, message)
         self.assertEqual(result["status"], "In Progress")
+        self.assertTrue(result["email_notification_sent"])
 
     def test_notifications_are_scoped_for_reporters_and_technicians(self):
         self.db.add(
@@ -451,6 +483,14 @@ class TicketCompletionTests(unittest.TestCase):
                 linked_by_user_id=self.admin.id,
             )
         )
+        self.db.add(
+            TicketHistory(
+                ticket_id=self.ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
+            )
+        )
         self.db.commit()
 
         with patch("tickets.send_reporter_whatsapp_update") as send_update:
@@ -475,6 +515,36 @@ class TicketCompletionTests(unittest.TestCase):
         self.assertNotIn("Please test the connection again.", message)
         self.assertNotIn(self.technician.full_name, message)
 
+    def test_trackdesk_ticket_status_update_does_not_send_whatsapp(self):
+        self.db.add(
+            WhatsAppContact(
+                phone_number="+15551234567",
+                user_id=self.reporter.id,
+                linked_by_user_id=self.admin.id,
+            )
+        )
+        self.db.add(
+            TicketHistory(
+                ticket_id=self.ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created",
+                new_status="Open",
+            )
+        )
+        self.db.commit()
+
+        result = update_ticket_status(
+            self.ticket.id,
+            StatusUpdate(
+                status="Resolved",
+                resolution="Replaced the faulty adapter.",
+            ),
+            self.db,
+            self.technician,
+        )
+
+        self.assertFalse(result["whatsapp_notification_sent"])
+
     def test_updating_resolution_on_already_resolved_ticket_sends_whatsapp(self):
         self.ticket.status = "Resolved"
         self.ticket.resolution = "Initial resolution."
@@ -484,6 +554,14 @@ class TicketCompletionTests(unittest.TestCase):
                 phone_number="+15551234567",
                 user_id=self.reporter.id,
                 linked_by_user_id=self.admin.id,
+            )
+        )
+        self.db.add(
+            TicketHistory(
+                ticket_id=self.ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
             )
         )
         self.db.commit()
@@ -510,6 +588,14 @@ class TicketCompletionTests(unittest.TestCase):
                 phone_number="+15551234567",
                 user_id=self.reporter.id,
                 linked_by_user_id=self.admin.id,
+            )
+        )
+        self.db.add(
+            TicketHistory(
+                ticket_id=self.ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
             )
         )
         self.db.commit()
@@ -543,6 +629,14 @@ class TicketCompletionTests(unittest.TestCase):
                 linked_by_user_id=self.admin.id,
             )
         )
+        self.db.add(
+            TicketHistory(
+                ticket_id=self.ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
+            )
+        )
         self.db.commit()
 
         with patch("tickets.send_reporter_whatsapp_update") as send_update:
@@ -562,7 +656,11 @@ class TicketCompletionTests(unittest.TestCase):
         )
         self.assertIsNone(result["assigned_technician_id"])
         self.assertIsNone(result["resolved_at"])
-        history = self.db.query(TicketHistory).one()
+        history = (
+            self.db.query(TicketHistory)
+            .order_by(TicketHistory.id.desc())
+            .first()
+        )
         self.assertEqual(history.action, "Ticket reopened")
         self.assertEqual(history.old_status, "Resolved")
         self.assertEqual(history.new_status, "Open")

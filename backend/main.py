@@ -6,7 +6,7 @@ from admin import router as admin_router
 from auth import router as auth_router
 from tickets import router as tickets_router
 from whatsapp import router as whatsapp_router
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -215,6 +215,15 @@ def reset_password_page():
     </body>
     </html>
     """
+
+
+@app.get("/reset-password/reset-password")
+def redirect_legacy_reset_password_link(request: Request):
+    return RedirectResponse(
+        url=str(request.url.replace(path="/reset-password")),
+        status_code=307,
+    )
+
 
 app.include_router(auth_router)
 app.include_router(tickets_router)

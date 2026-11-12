@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+
 import 'offline_sync_service.dart';
 
 class ApiService {
@@ -137,6 +138,18 @@ class ApiService {
       }
       rethrow;
     }
+  }
+
+  static Future<Map<String, dynamic>> getTicket(int ticketId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/tickets/$ticketId'),
+      headers: _headers,
+    );
+    final decoded = _decode(response);
+    if (response.statusCode == 200 && decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    throw Exception(_error(decoded, 'Could not load ticket'));
   }
 
   static Future<List<dynamic>> getTicketNotifications() async {

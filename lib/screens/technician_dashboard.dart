@@ -35,6 +35,9 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
   bool _notificationsInitialized = false;
   String? _notificationError;
   Future<void>? _notificationLoad;
+  bool _dashboardPollInProgress = false;
+  bool _ticketRefreshInProgress = false;
+  bool _hasLoadedTickets = false;
 
   String _assignedFilter = 'All';
   String _ticketFilter = 'All';
@@ -59,8 +62,8 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     if (!isTest) {
       _loadNotifications();
       _notificationTimer = Timer.periodic(
-        const Duration(seconds: 30),
-        (_) => _loadNotifications(detectNew: true),
+        const Duration(seconds: 5),
+        (_) => _pollDashboard(),
       );
     }
   }
@@ -124,7 +127,6 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
             content: Text('${latest['ticket_number']}: ${latest['action']}'),
           ),
         );
-        await _refreshTickets();
       }
     } catch (error) {
       if (!mounted) return;
@@ -134,6 +136,24 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
           '',
         ),
       );
+    }
+  }
+
+  Future<void> _pollDashboard() async {
+    if (_dashboardPollInProgress ||
+        !mounted ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+
+    _dashboardPollInProgress = true;
+    try {
+      await Future.wait([
+        _refreshTickets(),
+        _loadNotifications(detectNew: true),
+      ]);
+    } finally {
+      _dashboardPollInProgress = false;
     }
   }
 
@@ -185,9 +205,10 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
 
   // ---- Data logic (unchanged) ----------------------------------------------
   Future<void> _refreshTickets() async {
-    if (mounted) {
+    if (_ticketRefreshInProgress) return;
+    _ticketRefreshInProgress = true;
+    if (mounted && !_hasLoadedTickets) {
       setState(() {
-        _loading = true;
         _error = null;
       });
     }
@@ -204,12 +225,16 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
         _tickets = tickets;
         _loading = false;
       });
+      _hasLoadedTickets = true;
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
+      _hasLoadedTickets = true;
+    } finally {
+      _ticketRefreshInProgress = false;
     }
   }
 

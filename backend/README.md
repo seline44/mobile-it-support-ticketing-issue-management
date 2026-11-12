@@ -83,19 +83,20 @@ notifications.
 ## Email notifications
 
 Ticket email notifications to reporters and approved, active technicians are
-disabled by default. To enable them, set
-`TICKET_EMAIL_NOTIFICATIONS_ENABLED=true` in the backend environment. Leave the
-setting unset or set it to `false` to disable ticket notifications. Password
-reset email is controlled separately by the SMTP settings below.
+enabled by default. Set `TICKET_EMAIL_NOTIFICATIONS_ENABLED=false` in the
+backend environment to disable them. Password reset email is controlled
+separately by the SMTP settings below.
 
 The backend sends email after ticket creation (to the Reporter and all active,
-approved Technicians), when support staff post a public reply, and when a ticket
-is resolved or closed. Private staff notes are not emailed. Delivery errors are
-logged and do not undo a saved ticket. WhatsApp guest accounts without a real
-email address can still receive WhatsApp messages, but cannot receive email.
-Status and resolution updates are also recorded in ticket activity and the
-Reporter notification feed in TriageDesk; email delivery is reported separately
-from WhatsApp delivery.
+approved Technicians), when a technician accepts a ticket, when its status
+changes, when support staff post a public reply, and when it is resolved,
+closed, or reopened. Private staff notes are not emailed. Reporter email
+updates are sent only for tickets created in TriageDesk; WhatsApp-created
+tickets use WhatsApp for Reporter feedback instead. Delivery errors are logged
+and do not undo a saved ticket. WhatsApp guest accounts without a real email
+address can receive WhatsApp messages, but cannot receive email. Updates are
+also recorded in ticket activity and the Reporter notification feed in
+TriageDesk.
 
 For Gmail, enable 2-Step Verification on the sending Google account and create
 an App Password. Use the App Password rather than the account's normal

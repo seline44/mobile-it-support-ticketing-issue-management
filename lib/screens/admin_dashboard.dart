@@ -69,6 +69,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Timer? _notificationTimer;
   bool _notificationsInitialized = false;
   String? _notificationError;
+  bool _dashboardPollInProgress = false;
+  bool _ticketRefreshInProgress = false;
+  bool _hasLoadedTickets = false;
+  bool _approvalLoadInProgress = false;
+  bool _whatsAppNotificationLoadInProgress = false;
 
   @override
   void initState() {
@@ -81,8 +86,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _loadPendingApprovals();
       _loadWhatsAppNotifications();
       _notificationTimer = Timer.periodic(
-        const Duration(seconds: 30),
-        (_) => _loadWhatsAppNotifications(detectNew: true),
+        const Duration(seconds: 5),
+        (_) => _pollDashboard(),
       );
     }
   }
@@ -95,7 +100,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   // ---- Data logic ------------------------------------------------------------
   Future<void> _loadTickets() async {
-    if (mounted) setState(() => _isLoading = true);
+    if (_ticketRefreshInProgress) return;
+    _ticketRefreshInProgress = true;
+    if (mounted && !_hasLoadedTickets) {
+      setState(() => _loadError = null);
+    }
     try {
       final response = await ApiService.getTickets();
       final loaded = response
@@ -108,18 +117,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
         _isLoading = false;
         _loadError = null;
       });
+      _hasLoadedTickets = true;
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
         _loadError = error.toString();
       });
+      _hasLoadedTickets = true;
+    } finally {
+      _ticketRefreshInProgress = false;
     }
   }
 
   /// Best effort: powers the "accounts waiting" banner. Errors are ignored so
   /// the dashboard still works if the users endpoint is unavailable.
   Future<void> _loadPendingApprovals() async {
+    if (_approvalLoadInProgress) return;
+    _approvalLoadInProgress = true;
     try {
       final users = await ApiService.getAllUsers();
       final pending = users.where((u) {
@@ -132,7 +147,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
       }).length;
       if (!mounted) return;
       setState(() => _pendingApprovals = pending);
-    } catch (_) {}
+    } catch (_) {
+      // The dashboard remains usable if the approvals endpoint is unavailable.
+    } finally {
+      _approvalLoadInProgress = false;
+    }
   }
 
   Future<void> _refreshAll() async {
@@ -143,7 +162,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
     ]);
   }
 
+  Future<void> _pollDashboard() async {
+    if (_dashboardPollInProgress ||
+        !mounted ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+
+    _dashboardPollInProgress = true;
+    try {
+      await _refreshAll();
+    } finally {
+      _dashboardPollInProgress = false;
+    }
+  }
+
   Future<void> _loadWhatsAppNotifications({bool detectNew = false}) async {
+    if (_whatsAppNotificationLoadInProgress) return;
+    _whatsAppNotificationLoadInProgress = true;
     try {
       final response = await ApiService.getWhatsAppTicketNotifications();
       final notifications = response
@@ -173,8 +209,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       });
 
       if (newNotifications.isNotEmpty) {
-        await _loadTickets();
-        if (!mounted) return;
         final latest = newNotifications.first;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -192,6 +226,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
           '',
         ),
       );
+    } finally {
+      _whatsAppNotificationLoadInProgress = false;
     }
   }
 

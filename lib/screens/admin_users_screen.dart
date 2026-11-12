@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
@@ -19,19 +21,33 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   String _selectedFilter = 'All';
   final Set<int> _updatingUserIds = {};
   final Set<int> _deletingUserIds = {};
+  Timer? _syncTimer;
+  bool _userLoadInProgress = false;
+  bool _hasLoadedUsers = false;
   static const _filters = ['All', 'Pending', 'Approved', 'Rejected'];
 
   @override
   void initState() {
     super.initState();
     _loadUsers();
+    _syncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+          _updatingUserIds.isEmpty &&
+          _deletingUserIds.isEmpty) {
+        _loadUsers(silent: true);
+      }
+    });
   }
 
-  Future<void> _loadUsers() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  Future<void> _loadUsers({bool silent = false}) async {
+    if (_userLoadInProgress) return;
+    _userLoadInProgress = true;
+    if (mounted && (!silent || !_hasLoadedUsers)) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
     try {
       final users = await ApiService.getAllUsers();
       if (!mounted) return;
@@ -39,13 +55,25 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         _users = users;
         _isLoading = false;
       });
+      _hasLoadedUsers = true;
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = error.toString().replaceFirst('Exception: ', '');
+        if (!silent || !_hasLoadedUsers) {
+          _errorMessage = error.toString().replaceFirst('Exception: ', '');
+        }
         _isLoading = false;
       });
+      _hasLoadedUsers = true;
+    } finally {
+      _userLoadInProgress = false;
     }
+  }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    super.dispose();
   }
 
   String _approvalStatus(Map<String, dynamic> user) {

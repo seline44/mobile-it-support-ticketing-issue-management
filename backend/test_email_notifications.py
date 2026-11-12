@@ -9,9 +9,10 @@ from database import Base
 from email_notifications import (
     notify_reporter_public_reply,
     notify_reporter_resolved,
+    notify_reporter_status_update,
     notify_ticket_created,
 )
-from models import Ticket, User
+from models import Ticket, TicketHistory, User
 
 
 class EmailNotificationTests(unittest.TestCase):
@@ -105,6 +106,16 @@ class EmailNotificationTests(unittest.TestCase):
         self.assertIn("The laptop will not start.", technician_email.args[2])
 
     @patch("email_notifications.send_email")
+    def test_creation_notifications_are_enabled_by_default(self, send_email):
+        with patch.dict(os.environ, {}, clear=True):
+            notify_ticket_created(self.db, self.ticket)
+
+        self.assertIn(
+            self.reporter.email,
+            {call.args[0] for call in send_email.call_args_list},
+        )
+
+    @patch("email_notifications.send_email")
     def test_public_reply_and_resolution_email_the_reporter(self, send_email):
         self.ticket.status = "Resolved"
         self.ticket.resolution = "Replaced the power adapter."
@@ -122,6 +133,52 @@ class EmailNotificationTests(unittest.TestCase):
         self.assertIn("Please try starting the laptop again.", send_email.call_args_list[0].args[2])
         self.assertIn("Replaced the power adapter.", send_email.call_args_list[1].args[2])
         self.assertTrue(resolved_email_sent)
+
+    @patch("email_notifications.send_email")
+    def test_status_update_emails_reporter(self, send_email):
+        sent = notify_reporter_status_update(
+            self.db,
+            self.ticket,
+            "A technician accepted your ticket.",
+        )
+
+        self.assertTrue(sent)
+        send_email.assert_called_once()
+        self.assertEqual(send_email.call_args.args[0], self.reporter.email)
+        self.assertIn("A technician accepted your ticket.", send_email.call_args.args[2])
+
+    @patch("email_notifications.send_email")
+    def test_whatsapp_ticket_does_not_email_reporter_updates(self, send_email):
+        self.db.add(
+            TicketHistory(
+                ticket_id=self.ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
+            )
+        )
+        self.db.commit()
+
+        notify_ticket_created(self.db, self.ticket)
+        notify_reporter_public_reply(
+            self.db,
+            self.ticket,
+            self.technician,
+            "Your device is ready.",
+        )
+        self.assertFalse(notify_reporter_resolved(self.db, self.ticket))
+        self.assertFalse(
+            notify_reporter_status_update(
+                self.db,
+                self.ticket,
+                "A technician accepted your ticket.",
+            )
+        )
+
+        self.assertEqual(
+            [call.args[0] for call in send_email.call_args_list],
+            [self.technician.email],
+        )
 
     @patch("email_notifications.send_email")
     def test_whatsapp_guest_reporter_is_not_emailed(self, send_email):

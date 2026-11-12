@@ -4,17 +4,29 @@ import os
 from sqlalchemy.orm import Session
 
 from email_service import send_email
-from models import Ticket, User
+from models import Ticket, TicketHistory, User
 
 logger = logging.getLogger(__name__)
 
 
 def _ticket_email_notifications_enabled() -> bool:
     return (
-        os.getenv("TICKET_EMAIL_NOTIFICATIONS_ENABLED", "false")
+        os.getenv("TICKET_EMAIL_NOTIFICATIONS_ENABLED", "true")
         .strip()
         .casefold()
         == "true"
+    )
+
+
+def _ticket_was_created_via_whatsapp(db: Session, ticket: Ticket) -> bool:
+    return (
+        db.query(TicketHistory.id)
+        .filter(
+            TicketHistory.ticket_id == ticket.id,
+            TicketHistory.action == "Ticket created via WhatsApp",
+        )
+        .first()
+        is not None
     )
 
 
@@ -53,7 +65,13 @@ def notify_ticket_created(db: Session, ticket: Ticket) -> None:
         return
     try:
         reporter = db.get(User, ticket.reporter_id)
-        if reporter is not None:
+        was_created_via_whatsapp = _ticket_was_created_via_whatsapp(db, ticket)
+        if reporter is None:
+            logger.warning(
+                "Could not email the reporter for ticket %s: user not found.",
+                ticket.ticket_number,
+            )
+        elif not was_created_via_whatsapp:
             _send_ticket_email(
                 ticket,
                 reporter.email,
@@ -67,8 +85,9 @@ def notify_ticket_created(db: Session, ticket: Ticket) -> None:
                 ),
             )
         else:
-            logger.warning(
-                "Could not email the reporter for ticket %s: user not found.",
+            logger.info(
+                "Email creation notification for ticket %s was skipped: "
+                "ticket was created via WhatsApp.",
                 ticket.ticket_number,
             )
 
@@ -118,6 +137,13 @@ def notify_reporter_public_reply(
         )
         return
     try:
+        if _ticket_was_created_via_whatsapp(db, ticket):
+            logger.info(
+                "Email reply notification for ticket %s was skipped: "
+                "ticket was created via WhatsApp.",
+                ticket.ticket_number,
+            )
+            return
         reporter = db.get(User, ticket.reporter_id)
         if reporter is None:
             logger.warning(
@@ -152,6 +178,13 @@ def notify_reporter_resolved(db: Session, ticket: Ticket) -> bool:
         )
         return False
     try:
+        if _ticket_was_created_via_whatsapp(db, ticket):
+            logger.info(
+                "Email resolution notification for ticket %s was skipped: "
+                "ticket was created via WhatsApp.",
+                ticket.ticket_number,
+            )
+            return False
         reporter = db.get(User, ticket.reporter_id)
         if reporter is None:
             logger.warning(
@@ -173,6 +206,51 @@ def notify_reporter_resolved(db: Session, ticket: Ticket) -> bool:
     except Exception:
         logger.exception(
             "Could not prepare a resolution email for ticket %s.",
+            ticket.ticket_number,
+        )
+        return False
+
+
+def notify_reporter_status_update(
+    db: Session,
+    ticket: Ticket,
+    update: str,
+) -> bool:
+    if not _ticket_email_notifications_enabled():
+        logger.info(
+            "Ticket email notifications are disabled; skipping status email "
+            "for ticket %s.",
+            ticket.ticket_number,
+        )
+        return False
+    try:
+        if _ticket_was_created_via_whatsapp(db, ticket):
+            logger.info(
+                "Email status notification for ticket %s was skipped: "
+                "ticket was created via WhatsApp.",
+                ticket.ticket_number,
+            )
+            return False
+        reporter = db.get(User, ticket.reporter_id)
+        if reporter is None:
+            logger.warning(
+                "Could not email the reporter for ticket %s: user not found.",
+                ticket.ticket_number,
+            )
+            return False
+        return _send_ticket_email(
+            ticket,
+            reporter.email,
+            f"Update on ticket {ticket.ticket_number}",
+            (
+                f"Hello {reporter.full_name},\n\n"
+                f"Your TriageDesk ticket {ticket.ticket_number} has been "
+                f"updated.\n\nStatus: {ticket.status}\nUpdate: {update}\n"
+            ),
+        )
+    except Exception:
+        logger.exception(
+            "Could not prepare a status email for ticket %s.",
             ticket.ticket_number,
         )
         return False

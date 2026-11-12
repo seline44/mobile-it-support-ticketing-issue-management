@@ -123,6 +123,16 @@ previously created by the seed script but left Pending, running the updated
 Administrators can export ticket reports as PDF, Word (`.docx`), or Excel
 (`.xlsx`) from the Reports tab.
 
+## Automatic dashboard updates
+
+Open dashboards, ticket details, and the administrator's People screen
+automatically sync with the backend every five seconds while the app is in the
+foreground. This includes changes made by other users, other devices, and
+WhatsApp-created tickets; there is no need to sign out, sign back in, or
+manually refresh. A new ticket may take up to about five seconds to appear
+after it reaches the backend. A reachable backend and an active connection are
+required.
+
 The commands above explicitly override the default API URL to use your local
 development backend. For a deployed app or devices on an untrusted network,
 use an HTTPS API URL. iOS builds require macOS and Xcode; a physical iOS device

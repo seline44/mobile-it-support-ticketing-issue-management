@@ -37,6 +37,9 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
   bool _notificationsInitialized = false;
   String? _notificationError;
   Future<void>? _notificationLoad;
+  bool _dashboardPollInProgress = false;
+  bool _ticketRefreshInProgress = false;
+  bool _hasLoadedTickets = false;
   final TextEditingController _searchController = TextEditingController();
 
   static const Color success = AppTheme.accentTeal;
@@ -52,8 +55,8 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
     );
     if (!isTest) {
       _notificationTimer = Timer.periodic(
-        const Duration(seconds: 30),
-        (_) => _loadNotifications(detectNew: true),
+        const Duration(seconds: 5),
+        (_) => _pollDashboard(),
       );
     }
   }
@@ -117,7 +120,6 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
             content: Text('${latest['ticket_number']}: ${latest['action']}'),
           ),
         );
-        await _refreshTickets();
       }
     } catch (error) {
       if (!mounted) return;
@@ -127,6 +129,24 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
           '',
         ),
       );
+    }
+  }
+
+  Future<void> _pollDashboard() async {
+    if (_dashboardPollInProgress ||
+        !mounted ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+
+    _dashboardPollInProgress = true;
+    try {
+      await Future.wait([
+        _refreshTickets(),
+        _loadNotifications(detectNew: true),
+      ]);
+    } finally {
+      _dashboardPollInProgress = false;
     }
   }
 
@@ -140,9 +160,10 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
   }
 
   Future<void> _refreshTickets() async {
-    if (mounted) {
+    if (_ticketRefreshInProgress) return;
+    _ticketRefreshInProgress = true;
+    if (mounted && !_hasLoadedTickets) {
       setState(() {
-        _isLoadingTickets = true;
         _ticketError = null;
       });
     }
@@ -158,12 +179,16 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
         _isLoadingTickets = false;
         _ticketError = null;
       });
+      _hasLoadedTickets = true;
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _isLoadingTickets = false;
         _ticketError = error.toString().replaceFirst('Exception: ', '');
       });
+      _hasLoadedTickets = true;
+    } finally {
+      _ticketRefreshInProgress = false;
     }
   }
 

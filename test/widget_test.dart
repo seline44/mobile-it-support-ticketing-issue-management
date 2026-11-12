@@ -937,6 +937,33 @@ void main() {
           200,
         );
       }
+      if (request.url.path == '/tickets/53' && request.method == 'GET') {
+        return http.Response(
+          jsonEncode({
+            'id': 53,
+            'ticket_number': 'TD-53',
+            'title': 'Laptop will not start',
+            'description': 'The laptop will not start.',
+            'category': 'Hardware',
+            'impact': 'Medium',
+            'urgency': 'High',
+            'priority': 'High',
+            'device': 'Laptop',
+            'location': 'Office',
+            'status': submitted?['status'] ?? 'In Progress',
+            'resolution': submitted?['resolution'],
+            'assigned_technician_id': 4,
+            'assigned_technician_name': 'Asha Njeri',
+            'last_modified_at': DateTime.now().toIso8601String(),
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+            'resolved_at': submitted == null
+                ? null
+                : DateTime.now().toIso8601String(),
+          }),
+          200,
+        );
+      }
       if (request.url.path == '/tickets/53/history' &&
           request.method == 'GET') {
         return http.Response(
