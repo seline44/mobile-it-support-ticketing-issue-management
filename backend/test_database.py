@@ -1,11 +1,15 @@
 from datetime import datetime, timedelta, timezone
 import unittest
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from auth import (
+    ForgotPasswordRequest,
     ResetPasswordRequest,
+    forgot_password,
     hash_reset_token,
     password_hash,
     reset_password,
@@ -60,7 +64,7 @@ class PasswordResetTests(unittest.TestCase):
         self.db = Session(self.engine)
         self.user = User(
             full_name="Test Reporter",
-            email="reset@example.test",
+            email="reset@example.com",
             password_hash=password_hash.hash("old-password-value"),
             role="Reporter",
             approval_status="Approved",
@@ -100,6 +104,28 @@ class PasswordResetTests(unittest.TestCase):
         )
         self.assertIsNone(self.user.reset_token_hash)
         self.assertIsNone(self.user.reset_token_expires_at)
+
+    @patch.dict(
+        "os.environ",
+        {"PASSWORD_RESET_URL": "http://127.0.0.1:8000/reset-password"},
+    )
+    @patch("email_service.send_email")
+    def test_forgot_password_does_not_duplicate_reset_path(self, send_email):
+        response = forgot_password(
+            ForgotPasswordRequest(email=self.user.email),
+            self.db,
+        )
+
+        self.assertIn("password-reset link", response["message"])
+        email_body = send_email.call_args.kwargs["body"]
+        link = next(
+            line for line in email_body.splitlines() if line.startswith("http")
+        )
+        parsed_link = urlsplit(link)
+
+        self.assertEqual(parsed_link.path, "/reset-password")
+        self.assertEqual(parsed_link.path.count("reset-password"), 1)
+        self.assertIn("token", parse_qs(parsed_link.query))
 
 
 if __name__ == "__main__":

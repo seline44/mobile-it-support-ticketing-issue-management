@@ -16,7 +16,7 @@ from models import User
 
 import hashlib
 import secrets
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 load_dotenv()
 
@@ -289,7 +289,13 @@ def forgot_password(
         os.getenv("PASSWORD_RESET_URL")
         or os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8000")
     )
-    reset_url = f"{reset_url.rstrip('/')}/reset-password"
+    parsed_reset_url = urlsplit(reset_url.rstrip("/"))
+    reset_path = parsed_reset_url.path.rstrip("/")
+    if not reset_path.endswith("/reset-password"):
+        reset_path = f"{reset_path}/reset-password"
+    reset_url = urlunsplit(
+        parsed_reset_url._replace(path=reset_path, query="", fragment="")
+    )
     link = f"{reset_url}?{urlencode({'token': token})}"
 
     try:
