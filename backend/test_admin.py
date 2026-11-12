@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from database import Base
 from admin import (
     AccountStatusRequest,
+    WhatsAppLinkRequest,
     delete_user,
+    link_whatsapp_number,
     list_whatsapp_ticket_notifications,
     update_user_active_status,
 )
@@ -264,6 +266,71 @@ class AdminWhatsAppNotificationTests(unittest.TestCase):
 
         self.assertEqual(error.exception.status_code, 400)
         self.assertTrue(self.admin.is_active)
+
+    def test_link_whatsapp_number_transfers_guest_tickets_to_reporter(self):
+        phone_number = "+15559876543"
+        guest_user = User(
+            full_name=f"WhatsApp Guest ({phone_number})",
+            email=f"guest_{phone_number.lstrip('+')}@triagedesk.guest",
+            password_hash="guest_no_password",
+            role="Reporter",
+            approval_status="Approved",
+            is_active=True,
+        )
+        self.db.add(guest_user)
+        self.db.flush()
+
+        self.db.add(
+            WhatsAppContact(
+                phone_number=phone_number,
+                user_id=guest_user.id,
+                linked_by_user_id=guest_user.id,
+            )
+        )
+        guest_ticket = Ticket(
+            ticket_number="TD-GUEST-1",
+            title="Guest issue via WhatsApp",
+            description="Guest description",
+            category="Hardware",
+            impact="Medium",
+            urgency="Medium",
+            priority="Medium",
+            status="Open",
+            reporter_id=guest_user.id,
+        )
+        self.db.add(guest_ticket)
+        self.db.flush()
+        self.db.add(
+            TicketHistory(
+                ticket_id=guest_ticket.id,
+                actor_id=guest_user.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
+            )
+        )
+        self.db.commit()
+
+        res = link_whatsapp_number(
+            request=WhatsAppLinkRequest(phone_number=phone_number),
+            user_id=self.reporter.id,
+            db=self.db,
+            admin=self.admin,
+        )
+
+        self.assertEqual(res["user_id"], self.reporter.id)
+        self.assertEqual(res["phone_number"], phone_number)
+        self.assertIn("transferred", res["message"])
+
+        # Verify ticket was transferred to self.reporter.id
+        updated_ticket = self.db.get(Ticket, guest_ticket.id)
+        self.assertEqual(updated_ticket.reporter_id, self.reporter.id)
+
+        # Verify guest user was deleted
+        self.assertIsNone(self.db.get(User, guest_user.id))
+
+        # Verify contact now links to self.reporter.id
+        contact = self.db.get(WhatsAppContact, phone_number)
+        self.assertEqual(contact.user_id, self.reporter.id)
 
 
 if __name__ == "__main__":

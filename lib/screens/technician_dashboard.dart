@@ -255,7 +255,8 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
   List<Ticket> get _availableTickets => _tickets
       .where(
         (ticket) =>
-            ticket.status == 'Open' && ticket.assignedTechnicianId == null,
+            (ticket.status == 'Open' || ticket.status == 'Pending') &&
+            ticket.assignedTechnicianId == null,
       )
       .toList();
 
@@ -551,7 +552,7 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
               _UpNextCard(ticket: next, onOpen: () => _openTicket(next)),
               const SizedBox(height: 22),
             ],
-            if (_mine.isEmpty)
+            if (_mine.isEmpty && available.isEmpty)
               const TdEmptyState(
                 icon: Icons.inbox_outlined,
                 title: 'Nothing assigned yet',
@@ -706,7 +707,15 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
             )
           else
             for (final t in visible)
-              TdTicketCard(ticket: t, onTap: () => _openTicket(t)),
+              TdTicketCard(
+                ticket: t,
+                onTap: () => _openTicket(t),
+                onAccept: (t.status == 'Open' || t.status == 'Pending') &&
+                        t.assignedTechnicianId == null
+                    ? () => _acceptTicket(t)
+                    : null,
+                isAccepting: _acceptingTicketIds.contains(t.id),
+              ),
         ],
       ),
     );

@@ -251,7 +251,7 @@ def list_tickets(
             or_(
                 Ticket.assigned_technician_id == user.id,
                 (
-                    (Ticket.status == "Open")
+                    Ticket.status.in_(("Open", "Pending"))
                     & (Ticket.assigned_technician_id.is_(None))
                 ),
             )

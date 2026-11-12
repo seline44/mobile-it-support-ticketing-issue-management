@@ -123,7 +123,11 @@ def list_whatsapp_ticket_notifications(
     rows = (
         db.query(TicketHistory, Ticket)
         .join(Ticket, TicketHistory.ticket_id == Ticket.id)
-        .filter(TicketHistory.action == "Ticket created via WhatsApp")
+        .filter(
+            TicketHistory.action.in_(
+                ("Ticket created via WhatsApp", "Reporter WhatsApp follow-up")
+            )
+        )
         .order_by(TicketHistory.created_at.desc(), TicketHistory.id.desc())
         .limit(limit)
         .all()
@@ -403,6 +407,53 @@ def link_whatsapp_number(
                 "phone_number": existing_phone.phone_number,
                 "message": "This WhatsApp number is already linked to the Reporter.",
             }
+
+        existing_user = db.get(User, existing_phone.user_id)
+        is_guest = (
+            existing_user is not None
+            and (
+                existing_user.email.endswith("@triagedesk.guest")
+                or existing_user.password_hash == "guest_no_password"
+                or existing_user.full_name.startswith("WhatsApp Guest")
+            )
+        )
+        if is_guest:
+            db.query(Ticket).filter(
+                Ticket.reporter_id == existing_user.id
+            ).update(
+                {Ticket.reporter_id: user.id},
+                synchronize_session=False,
+            )
+            db.query(TicketNote).filter(
+                TicketNote.author_id == existing_user.id
+            ).update(
+                {TicketNote.author_id: user.id},
+                synchronize_session=False,
+            )
+            db.query(TicketHistory).filter(
+                TicketHistory.actor_id == existing_user.id
+            ).update(
+                {TicketHistory.actor_id: user.id},
+                synchronize_session=False,
+            )
+            db.query(WhatsAppConversation).filter(
+                WhatsAppConversation.phone_number == request.phone_number
+            ).delete(synchronize_session=False)
+
+            existing_phone.user_id = user.id
+            existing_phone.linked_by_user_id = admin.id
+            db.delete(existing_user)
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+            return {
+                "user_id": user.id,
+                "phone_number": existing_phone.phone_number,
+                "message": "WhatsApp number linked successfully and existing tickets transferred.",
+            }
+
         raise HTTPException(
             status_code=409,
             detail="This WhatsApp number is already linked to another account.",
