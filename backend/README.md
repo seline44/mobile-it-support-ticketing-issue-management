@@ -6,8 +6,13 @@ From this directory, activate the virtual environment and start FastAPI:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python -m uvicorn main:app --reload
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+For Flutter, set `API_BASE_URL` to `http://127.0.0.1:8000` in Chrome,
+`http://10.0.2.2:8000` in an Android emulator, or the computer's LAN IP on a
+physical device connected to the same network. See the repository
+[run guide](../README.md) for the Flutter commands and authentication setup.
 
 ## Migrate the current database to Render
 

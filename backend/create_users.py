@@ -24,6 +24,15 @@ def main():
             existing = db.query(User).filter(User.email == email).first()
 
             if existing:
+                if (
+                    role == "Administrator"
+                    and existing.role == "Administrator"
+                    and existing.approval_status == "Pending"
+                ):
+                    existing.approval_status = "Approved"
+                    db.commit()
+                    print(f"{email} administrator account approved.")
+                    continue
                 print(f"{email} already exists; skipping.")
                 continue
 
@@ -45,6 +54,9 @@ def main():
                 password_hash=password_hash.hash(password),
                 role=role,
                 is_active=True,
+                approval_status=(
+                    "Approved" if role == "Administrator" else "Pending"
+                ),
             )
             db.add(user)
             db.commit()
