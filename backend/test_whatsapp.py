@@ -198,12 +198,23 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             assigned_technician_id=2,
         )
         self.db.add(ticket)
+        self.db.flush()
+        self.db.add(
+            TicketHistory(
+                ticket_id=ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
+            )
+        )
         self.db.commit()
 
         with (
             patch.dict(
                 os.environ,
                 {
+                    "META_ACCESS_TOKEN": "",
+                    "META_PHONE_NUMBER_ID": "",
                     "TWILIO_ACCOUNT_SID": "AC123",
                     "TWILIO_AUTH_TOKEN": "test-auth-token",
                     "TWILIO_WHATSAPP_FROM": "whatsapp:+14155238886",
@@ -239,6 +250,15 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             assigned_technician_id=2,
         )
         self.db.add(ticket)
+        self.db.flush()
+        self.db.add(
+            TicketHistory(
+                ticket_id=ticket.id,
+                actor_id=self.reporter.id,
+                action="Ticket created via WhatsApp",
+                new_status="Open",
+            )
+        )
         self.db.commit()
 
         with (
@@ -263,6 +283,45 @@ class WhatsAppIntegrationTests(unittest.TestCase):
             "15551234567",
             "The technician resolved TD-META-UPDATE.",
         )
+
+    def test_app_created_ticket_does_not_send_whatsapp_update(self):
+        ticket = Ticket(
+            ticket_number="TD-APP-UPDATE",
+            title="Wi-Fi is unavailable",
+            description="Cannot connect to Wi-Fi.",
+            category="Network",
+            impact="High",
+            urgency="High",
+            priority="Critical",
+            status="In Progress",
+            reporter_id=self.reporter.id,
+            assigned_technician_id=self.admin.id,
+        )
+        self.db.add(ticket)
+        self.db.commit()
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "META_ACCESS_TOKEN": "test-meta-token",
+                    "META_PHONE_NUMBER_ID": "123456",
+                },
+            ),
+            patch(
+                "whatsapp_notifications.send_meta_whatsapp_message"
+            ) as send_message,
+            patch("whatsapp_notifications.Client") as twilio_client,
+        ):
+            sent = send_reporter_whatsapp_update(
+                self.db,
+                ticket,
+                "The technician accepted TD-APP-UPDATE.",
+            )
+
+        self.assertFalse(sent)
+        send_message.assert_not_called()
+        twilio_client.assert_not_called()
 
     def test_acknowledgement_after_ticket_does_not_start_another_conversation(self):
         self.send("wamid.1", "I cannot access the campus Wi-Fi.")

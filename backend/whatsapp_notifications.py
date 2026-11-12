@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from twilio.rest import Client
 
 from meta_whatsapp import send_meta_whatsapp_message
-from models import Ticket, WhatsAppContact
+from models import Ticket, TicketHistory, WhatsAppContact
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,23 @@ def send_reporter_whatsapp_update(
     ticket: Ticket,
     message: str,
 ) -> bool:
+    was_created_via_whatsapp = (
+        db.query(TicketHistory.id)
+        .filter(
+            TicketHistory.ticket_id == ticket.id,
+            TicketHistory.action == "Ticket created via WhatsApp",
+        )
+        .first()
+        is not None
+    )
+    if not was_created_via_whatsapp:
+        logger.info(
+            "WhatsApp update for %s was skipped: ticket was not created via "
+            "WhatsApp.",
+            ticket.ticket_number,
+        )
+        return False
+
     contact = (
         db.query(WhatsAppContact)
         .filter(WhatsAppContact.user_id == ticket.reporter_id)
