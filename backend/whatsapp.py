@@ -200,6 +200,7 @@ def whatsapp_twiml_response(text: str) -> Response:
 
 
 async def receive_meta_webhook(request: Request, db: Session):
+    logger.info("Received Meta WhatsApp webhook request.")
     raw_body = await request.body()
     if not verify_meta_webhook_signature(
         raw_body, request.headers.get("X-Hub-Signature-256")

@@ -6,7 +6,7 @@ import 'offline_sync_service.dart';
 class ApiService {
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000',
+    defaultValue: 'https://mobile-it-support-ticketing-issue.onrender.com',
   );
 
   static String? _accessToken;

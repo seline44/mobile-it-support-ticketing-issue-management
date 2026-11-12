@@ -1,4 +1,5 @@
 import logging
+import os
 
 from sqlalchemy.orm import Session
 
@@ -6,6 +7,15 @@ from email_service import send_email
 from models import Ticket, User
 
 logger = logging.getLogger(__name__)
+
+
+def _ticket_email_notifications_enabled() -> bool:
+    return (
+        os.getenv("TICKET_EMAIL_NOTIFICATIONS_ENABLED", "false")
+        .strip()
+        .casefold()
+        == "true"
+    )
 
 
 def _send_ticket_email(
@@ -35,6 +45,12 @@ def _send_ticket_email(
 
 
 def notify_ticket_created(db: Session, ticket: Ticket) -> None:
+    if not _ticket_email_notifications_enabled():
+        logger.info(
+            "Ticket email notifications are disabled; skipping ticket %s.",
+            ticket.ticket_number,
+        )
+        return
     try:
         reporter = db.get(User, ticket.reporter_id)
         if reporter is not None:
@@ -94,6 +110,13 @@ def notify_reporter_public_reply(
     author: User,
     reply: str,
 ) -> None:
+    if not _ticket_email_notifications_enabled():
+        logger.info(
+            "Ticket email notifications are disabled; skipping reply email "
+            "for ticket %s.",
+            ticket.ticket_number,
+        )
+        return
     try:
         reporter = db.get(User, ticket.reporter_id)
         if reporter is None:
@@ -121,6 +144,13 @@ def notify_reporter_public_reply(
 
 
 def notify_reporter_resolved(db: Session, ticket: Ticket) -> bool:
+    if not _ticket_email_notifications_enabled():
+        logger.info(
+            "Ticket email notifications are disabled; skipping resolution "
+            "email for ticket %s.",
+            ticket.ticket_number,
+        )
+        return False
     try:
         reporter = db.get(User, ticket.reporter_id)
         if reporter is None:

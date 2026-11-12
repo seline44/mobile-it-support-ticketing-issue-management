@@ -9,7 +9,8 @@ From this directory, activate the virtual environment and start FastAPI:
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-For Flutter, set `API_BASE_URL` to `http://127.0.0.1:8000` in Chrome,
+Flutter defaults to the deployed Render API. To test against this local API,
+override `API_BASE_URL`: use `http://127.0.0.1:8000` in Chrome,
 `http://10.0.2.2:8000` in an Android emulator, or the computer's LAN IP on a
 physical device connected to the same network. See the repository
 [run guide](../README.md) for the Flutter commands and authentication setup.
@@ -80,6 +81,12 @@ Configure SMTP as described below for password resets and ticket email
 notifications.
 
 ## Email notifications
+
+Ticket email notifications to reporters and approved, active technicians are
+disabled by default. To enable them, set
+`TICKET_EMAIL_NOTIFICATIONS_ENABLED=true` in the backend environment. Leave the
+setting unset or set it to `false` to disable ticket notifications. Password
+reset email is controlled separately by the SMTP settings below.
 
 The backend sends email after ticket creation (to the Reporter and all active,
 approved Technicians), when support staff post a public reply, and when a ticket

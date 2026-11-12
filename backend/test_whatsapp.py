@@ -339,7 +339,7 @@ class WhatsAppIntegrationTests(unittest.TestCase):
     def test_thanks_during_old_device_step_does_not_ask_for_more_details(self):
         self.db.add(
             WhatsAppConversation(
-                phone_number="+15551599952",
+                phone_number="+15551234567",
                 step="device",
                 description="My laptop cannot connect to Wi-Fi.",
                 category="Network",

@@ -4,6 +4,10 @@ TriageDesk is a Flutter app with a FastAPI backend and PostgreSQL database.
 These steps run the backend locally and connect Flutter from Chrome, an Android
 emulator, or a physical Android device.
 
+By default, the Flutter app connects to the deployed Render API at
+`https://mobile-it-support-ticketing-issue.onrender.com`. This lets the
+emulator, browser, and physical devices see the same tickets and accounts.
+
 ## Requirements
 
 - Flutter SDK and Chrome (for the web app)
@@ -119,8 +123,7 @@ previously created by the seed script but left Pending, running the updated
 Administrators can export ticket reports as PDF, Word (`.docx`), or Excel
 (`.xlsx`) from the Reports tab.
 
-Use the local HTTP URLs only for development on a trusted network. For a
-deployed app or devices on an untrusted network, host the API over HTTPS and
-pass its HTTPS URL as `API_BASE_URL`. iOS builds require macOS and Xcode; a
-physical iOS device also needs an HTTPS-accessible API for normal secure
-networking.
+The commands above explicitly override the default API URL to use your local
+development backend. For a deployed app or devices on an untrusted network,
+use an HTTPS API URL. iOS builds require macOS and Xcode; a physical iOS device
+also needs an HTTPS-accessible API for normal secure networking.

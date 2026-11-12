@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch
 
@@ -15,6 +16,13 @@ from models import Ticket, User
 
 class EmailNotificationTests(unittest.TestCase):
     def setUp(self):
+        patcher = patch.dict(
+            os.environ,
+            {"TICKET_EMAIL_NOTIFICATIONS_ENABLED": "true"},
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(self.engine)
         self.db = Session(self.engine)
@@ -124,6 +132,23 @@ class EmailNotificationTests(unittest.TestCase):
 
         self.assertEqual(send_email.call_count, 1)
         self.assertEqual(send_email.call_args.args[0], self.technician.email)
+
+    @patch("email_notifications.send_email")
+    def test_ticket_email_notifications_are_disabled_when_not_enabled(
+        self, send_email
+    ):
+        with patch.dict(os.environ, {"TICKET_EMAIL_NOTIFICATIONS_ENABLED": "false"}):
+            notify_ticket_created(self.db, self.ticket)
+            notify_reporter_public_reply(
+                self.db,
+                self.ticket,
+                self.technician,
+                "A public update.",
+            )
+            sent = notify_reporter_resolved(self.db, self.ticket)
+
+        self.assertFalse(sent)
+        send_email.assert_not_called()
 
     @patch(
         "email_notifications.send_email",
