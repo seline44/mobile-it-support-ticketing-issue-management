@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'screens/login_screen.dart';
+import 'services/sound_service.dart';
 import 'services/theme_service.dart';
 import 'services/whatsapp_contact.dart';
 import 'theme/app_theme.dart';
@@ -18,6 +19,7 @@ const String _mono = 'JetBrainsMono';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ThemeService.instance.init();
+  await SoundService.instance.init();
   runApp(const TriageDeskApp());
 }
 

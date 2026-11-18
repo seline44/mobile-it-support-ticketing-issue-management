@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/ticket.dart';
 import '../services/api_service.dart';
 import '../services/report_export_service.dart';
+import '../services/sound_service.dart';
 import '../theme/td_theme.dart';
 import '../widgets/td_ticket_widgets.dart';
 import '../widgets/td_widgets.dart';
@@ -209,6 +210,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       });
 
       if (newNotifications.isNotEmpty) {
+        SoundService.instance.playNotificationSound();
         final latest = newNotifications.first;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

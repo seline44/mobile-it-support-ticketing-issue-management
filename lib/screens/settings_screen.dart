@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api_service.dart';
+import '../services/sound_service.dart';
 import '../services/theme_service.dart';
 import '../services/whatsapp_contact.dart';
 import '../theme/app_theme.dart';
@@ -170,7 +171,61 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
+
+              Text('Notifications', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 3),
+              Text(
+                'Play audio alert sounds when new ticket updates arrive.',
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              AnimatedBuilder(
+                animation: SoundService.instance,
+                builder: (context, _) => Card(
+                  child: SwitchListTile(
+                    secondary: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accentTeal.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        SoundService.instance.soundEnabled
+                            ? Icons.volume_up_rounded
+                            : Icons.volume_off_rounded,
+                        color: AppTheme.accentTeal,
+                      ),
+                    ),
+                    title: const Text(
+                      'Notification Sound',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    subtitle: Text(
+                      SoundService.instance.soundEnabled
+                          ? 'Sound alerts enabled'
+                          : 'Sound alerts muted',
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
+                    value: SoundService.instance.soundEnabled,
+                    activeTrackColor: AppTheme.accentTeal,
+                    onChanged: (enabled) {
+                      SoundService.instance.setSoundEnabled(enabled);
+                      if (enabled) {
+                        SoundService.instance.playNotificationSound();
+                      }
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
 
               // Help & Support Card
               Card(

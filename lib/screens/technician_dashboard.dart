@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/ticket.dart';
 import '../services/api_service.dart';
+import '../services/sound_service.dart';
 import '../services/whatsapp_contact.dart';
 import '../theme/td_theme.dart';
 import '../widgets/td_ticket_widgets.dart';
@@ -121,6 +122,7 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
       });
 
       if (newNotifications.isNotEmpty) {
+        SoundService.instance.playNotificationSound();
         final latest = newNotifications.first;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

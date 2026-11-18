@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/ticket.dart';
 import '../services/api_service.dart';
+import '../services/sound_service.dart';
 import '../services/whatsapp_contact.dart';
 import '../theme/app_theme.dart';
 import '../theme/td_theme.dart';
@@ -114,6 +115,7 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
       });
 
       if (newNotifications.isNotEmpty) {
+        SoundService.instance.playNotificationSound();
         final latest = newNotifications.first;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
