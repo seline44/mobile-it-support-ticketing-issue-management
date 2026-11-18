@@ -135,9 +135,10 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
   }
 
   Future<void> _pollDashboard() async {
+    final state = WidgetsBinding.instance.lifecycleState;
     if (_dashboardPollInProgress ||
         !mounted ||
-        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        (state != null && state != AppLifecycleState.resumed)) {
       return;
     }
 

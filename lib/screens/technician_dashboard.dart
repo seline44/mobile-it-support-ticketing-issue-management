@@ -142,9 +142,10 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
   }
 
   Future<void> _pollDashboard() async {
+    final state = WidgetsBinding.instance.lifecycleState;
     if (_dashboardPollInProgress ||
         !mounted ||
-        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        (state != null && state != AppLifecycleState.resumed)) {
       return;
     }
 
