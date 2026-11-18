@@ -962,6 +962,20 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (isStaff) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _quickReplyChip('Password reset complete'),
+                        _quickReplyChip('Please restart your device'),
+                        _quickReplyChip('Investigating issue now'),
+                        _quickReplyChip('Issue resolved & verified'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
                 if (isStaff)
                   Align(
                     alignment: Alignment.centerLeft,
@@ -1041,6 +1055,27 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _quickReplyChip(String text) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(right: 6, bottom: 4),
+      child: ActionChip(
+        label: Text(text, style: const TextStyle(fontSize: 11)),
+        avatar: const Icon(Icons.bolt_rounded, size: 14),
+        visualDensity: VisualDensity.compact,
+        backgroundColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+        onPressed: () {
+          setState(() {
+            _commentController.text = text;
+            _commentController.selection = TextSelection.fromPosition(
+              TextPosition(offset: text.length),
+            );
+          });
+        },
       ),
     );
   }

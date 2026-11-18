@@ -201,21 +201,57 @@ class TdTicketCard extends StatelessWidget {
                             ),
                           ),
                         ],
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              ticket.category,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _categoryIcon(ticket.category),
+                                  size: 14,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  ticket.category,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
-                            TdSignalBars.build(ticket.priority),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    color: indicatorColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    ticket.priority,
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: indicatorColor,
+                                    ),
+                                  ),
+                                ),
+                                TdSignalBars.build(ticket.priority),
+                              ],
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 6),
                         Text(
                           tdFormatDateTime(context, ticket.createdAt),
                           style: TextStyle(
@@ -251,6 +287,37 @@ class TdTicketCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  IconData _categoryIcon(String category) {
+    switch (category.toLowerCase()) {
+      case 'network':
+      case 'wi-fi':
+      case 'wifi':
+      case 'internet':
+        return Icons.wifi_rounded;
+      case 'hardware':
+      case 'laptop':
+      case 'computer':
+        return Icons.laptop_mac_rounded;
+      case 'software':
+      case 'application':
+      case 'program':
+        return Icons.apps_rounded;
+      case 'printer':
+      case 'printing':
+        return Icons.print_rounded;
+      case 'email':
+      case 'e-mail':
+      case 'outlook':
+        return Icons.mail_outline_rounded;
+      case 'account access':
+      case 'password':
+      case 'login':
+        return Icons.lock_person_outlined;
+      default:
+        return Icons.confirmation_number_outlined;
+    }
   }
 
   (Color, Color) _statusColors(String status) {

@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,7 @@ class PendingUserResponse(BaseModel):
     approval_status: str
     is_active: bool
     created_at: object
+    assigned_tickets_count: int = 0
 
 
 class ApprovalRequest(BaseModel):
