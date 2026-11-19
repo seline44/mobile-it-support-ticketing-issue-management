@@ -496,6 +496,7 @@ void main() {
       expect(find.text('People'), findsOneWidget);
       expect(find.text('User management'), findsOneWidget);
       expect(find.text('Pending (1)'), findsOneWidget);
+      await tester.ensureVisible(find.text('Pending (1)'));
       await tester.tap(find.text('Pending (1)'));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
@@ -508,11 +509,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(updatedApproval, 'Approved');
 
-      await tester.scrollUntilVisible(
-        find.text('All (2)'),
-        -250,
-        scrollable: find.byType(Scrollable).last,
-      );
+      await tester.ensureVisible(find.text('All (2)'));
       await tester.tap(find.text('All (2)'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Link WhatsApp'));

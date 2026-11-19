@@ -6,6 +6,7 @@ import '../models/ticket.dart';
 import '../services/api_service.dart';
 import '../services/report_export_service.dart';
 import '../services/sound_service.dart';
+import '../theme/app_theme.dart';
 import '../theme/td_theme.dart';
 import '../widgets/td_ticket_widgets.dart';
 import '../widgets/td_widgets.dart';
@@ -563,6 +564,31 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ? 1
         : categoryEntries.first.value;
 
+    // Calculate technician workload distribution from tickets
+    final techWorkloadMap = <String, (int active, int resolved)>{};
+    for (final ticket in tickets) {
+      final techName = ticket.assignedTechnician;
+      if (techName != null && techName.isNotEmpty) {
+        final current = techWorkloadMap[techName] ?? (0, 0);
+        if (ticket.status == 'Resolved' || ticket.status == 'Closed') {
+          techWorkloadMap[techName] = (current.$1, current.$2 + 1);
+        } else {
+          techWorkloadMap[techName] = (current.$1 + 1, current.$2);
+        }
+      }
+    }
+
+    final techWorkloads = techWorkloadMap.entries
+        .map((e) => (
+              name: e.key,
+              activeCount: e.value.$1,
+              resolvedCount: e.value.$2,
+            ))
+        .toList()
+      ..sort((a, b) => b.activeCount != a.activeCount
+          ? b.activeCount.compareTo(a.activeCount)
+          : b.resolvedCount.compareTo(a.resolvedCount));
+
     return RefreshIndicator(
       color: theme.colorScheme.primary,
       onRefresh: _refreshAll,
@@ -750,6 +776,49 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   value: priorityCounts['Low'] ?? 0,
                   color: TdColors.teal,
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Technician workload distribution
+          _Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Technician workload',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    TextButton(
+                      onPressed: _openUsers,
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Manage team'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (techWorkloads.isEmpty)
+                  Text(
+                    'No technician workload recorded yet.',
+                    style: theme.textTheme.bodySmall,
+                  )
+                else
+                  for (final tw in techWorkloads) ...[
+                    _TechnicianWorkloadRow(
+                      name: tw.name,
+                      activeCount: tw.activeCount,
+                      resolvedCount: tw.resolvedCount,
+                    ),
+                    const SizedBox(height: 10),
+                  ],
               ],
             ),
           ),
@@ -1452,6 +1521,113 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             )
           : Icon(icon),
       label: Text(isExporting ? 'Preparing...' : label),
+    );
+  }
+}
+
+class _TechnicianWorkloadRow extends StatelessWidget {
+  final String name;
+  final int activeCount;
+  final int resolvedCount;
+
+  const _TechnicianWorkloadRow({
+    required this.name,
+    required this.activeCount,
+    required this.resolvedCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final (statusColor, loadBadge) = switch (activeCount) {
+      0 => (AppTheme.accentTeal, 'Available'),
+      1 || 2 || 3 => (TdColors.blue, 'Moderate load'),
+      _ => (TdColors.coral, 'Heavy load'),
+    };
+
+    final initials = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .take(2)
+        .map((e) => e.isNotEmpty ? e[0] : '')
+        .join()
+        .toUpperCase();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 14,
+                backgroundColor: statusColor.withValues(alpha: 0.15),
+                child: Text(
+                  initials.isEmpty ? 'T' : initials,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  loadBadge,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                '🛠️ $activeCount active',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '✅ $resolvedCount resolved',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

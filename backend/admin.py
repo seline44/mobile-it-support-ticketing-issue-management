@@ -1,4 +1,4 @@
-
+derstand
 from datetime import datetime
 from typing import Literal
 
@@ -32,6 +32,7 @@ class PendingUserResponse(BaseModel):
     is_active: bool
     created_at: object
     assigned_tickets_count: int = 0
+    resolved_tickets_count: int = 0
 
 
 class ApprovalRequest(BaseModel):
@@ -87,11 +88,44 @@ def list_all_users(
     db: Session = Depends(get_db),
     admin: User = Depends(require_roles("Administrator")),
 ):
-    return (
-        db.query(User)
-        .order_by(User.created_at.asc())
+    users = db.query(User).order_by(User.created_at.asc()).all()
+    active_counts = dict(
+        db.query(Ticket.assigned_technician_id, func.count(Ticket.id))
+        .filter(
+            Ticket.assigned_technician_id.isnot(None),
+            Ticket.status.in_(("Open", "In Progress", "Pending")),
+        )
+        .group_by(Ticket.assigned_technician_id)
         .all()
     )
+    resolved_counts = dict(
+        db.query(Ticket.assigned_technician_id, func.count(Ticket.id))
+        .filter(
+            Ticket.assigned_technician_id.isnot(None),
+            Ticket.status.in_(("Resolved", "Closed")),
+        )
+        .group_by(Ticket.assigned_technician_id)
+        .all()
+    )
+
+    return [
+        {
+            "id": u.id,
+            "full_name": u.full_name,
+            "email": u.email,
+            "role": u.role,
+            "approval_status": u.approval_status,
+            "is_active": u.is_active,
+            "created_at": u.created_at,
+            "assigned_tickets_count": active_counts.get(u.id, 0)
+            if u.role == "Technician"
+            else 0,
+            "resolved_tickets_count": resolved_counts.get(u.id, 0)
+            if u.role == "Technician"
+            else 0,
+        }
+        for u in users
+    ]
 
 
 

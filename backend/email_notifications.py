@@ -4,7 +4,7 @@ import os
 from sqlalchemy.orm import Session
 
 from email_service import send_email
-from models import Ticket, TicketHistory, User
+from models import Ticket, User
 
 logger = logging.getLogger(__name__)
 
@@ -15,18 +15,6 @@ def _ticket_email_notifications_enabled() -> bool:
         .strip()
         .casefold()
         == "true"
-    )
-
-
-def _ticket_was_created_via_whatsapp(db: Session, ticket: Ticket) -> bool:
-    return (
-        db.query(TicketHistory.id)
-        .filter(
-            TicketHistory.ticket_id == ticket.id,
-            TicketHistory.action == "Ticket created via WhatsApp",
-        )
-        .first()
-        is not None
     )
 
 
@@ -65,13 +53,12 @@ def notify_ticket_created(db: Session, ticket: Ticket) -> None:
         return
     try:
         reporter = db.get(User, ticket.reporter_id)
-        was_created_via_whatsapp = _ticket_was_created_via_whatsapp(db, ticket)
         if reporter is None:
             logger.warning(
                 "Could not email the reporter for ticket %s: user not found.",
                 ticket.ticket_number,
             )
-        elif not was_created_via_whatsapp:
+        else:
             _send_ticket_email(
                 ticket,
                 reporter.email,
@@ -84,13 +71,6 @@ def notify_ticket_created(db: Session, ticket: Ticket) -> None:
                     "A technician will review your request."
                 ),
             )
-        else:
-            logger.info(
-                "Email creation notification for ticket %s was skipped: "
-                "ticket was created via WhatsApp.",
-                ticket.ticket_number,
-            )
-
         technicians = (
             db.query(User)
             .filter(
@@ -137,13 +117,6 @@ def notify_reporter_public_reply(
         )
         return
     try:
-        if _ticket_was_created_via_whatsapp(db, ticket):
-            logger.info(
-                "Email reply notification for ticket %s was skipped: "
-                "ticket was created via WhatsApp.",
-                ticket.ticket_number,
-            )
-            return
         reporter = db.get(User, ticket.reporter_id)
         if reporter is None:
             logger.warning(
@@ -178,13 +151,6 @@ def notify_reporter_resolved(db: Session, ticket: Ticket) -> bool:
         )
         return False
     try:
-        if _ticket_was_created_via_whatsapp(db, ticket):
-            logger.info(
-                "Email resolution notification for ticket %s was skipped: "
-                "ticket was created via WhatsApp.",
-                ticket.ticket_number,
-            )
-            return False
         reporter = db.get(User, ticket.reporter_id)
         if reporter is None:
             logger.warning(
@@ -224,13 +190,6 @@ def notify_reporter_status_update(
         )
         return False
     try:
-        if _ticket_was_created_via_whatsapp(db, ticket):
-            logger.info(
-                "Email status notification for ticket %s was skipped: "
-                "ticket was created via WhatsApp.",
-                ticket.ticket_number,
-            )
-            return False
         reporter = db.get(User, ticket.reporter_id)
         if reporter is None:
             logger.warning(

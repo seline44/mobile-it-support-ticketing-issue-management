@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 import '../theme/td_theme.dart';
 import '../widgets/td_ticket_widgets.dart';
 import '../widgets/td_widgets.dart';
@@ -24,7 +25,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   Timer? _syncTimer;
   bool _userLoadInProgress = false;
   bool _hasLoadedUsers = false;
-  static const _filters = ['All', 'Pending', 'Approved', 'Rejected'];
+  static const _filters = [
+    'All',
+    'Reporters',
+    'Technicians',
+    'Administrators',
+    'Pending',
+    'Approved',
+    'Rejected',
+  ];
 
   @override
   void initState() {
@@ -84,23 +93,48 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     return status.isEmpty ? 'Pending' : status;
   }
 
-  int _countFor(String status) {
-    if (status == 'All') return _users.length;
+  int _countFor(String filter) {
+    if (filter == 'All') return _users.length;
+    final lower = filter.toLowerCase();
+    if (lower == 'reporters') {
+      return _users.where((item) => item is Map && (item['role'] ?? '').toString().toLowerCase() == 'reporter').length;
+    }
+    if (lower == 'technicians') {
+      return _users.where((item) => item is Map && (item['role'] ?? '').toString().toLowerCase() == 'technician').length;
+    }
+    if (lower == 'administrators') {
+      return _users.where((item) => item is Map && (item['role'] ?? '').toString().toLowerCase() == 'administrator').length;
+    }
     return _users.where((item) {
       if (item is! Map) return false;
       return _approvalStatus(Map<String, dynamic>.from(item)).toLowerCase() ==
-          status.toLowerCase();
+          lower;
     }).length;
   }
 
   List<Map<String, dynamic>> get _filteredUsers {
     final result = <Map<String, dynamic>>[];
+    final lowerFilter = _selectedFilter.toLowerCase();
     for (final item in _users) {
       if (item is! Map) continue;
       final user = Map<String, dynamic>.from(item);
-      if (_selectedFilter == 'All' ||
-          _approvalStatus(user).toLowerCase() ==
-              _selectedFilter.toLowerCase()) {
+      final role = (user['role'] ?? '').toString().toLowerCase();
+      final status = _approvalStatus(user).toLowerCase();
+
+      bool matches = false;
+      if (_selectedFilter == 'All') {
+        matches = true;
+      } else if (lowerFilter == 'reporters') {
+        matches = (role == 'reporter');
+      } else if (lowerFilter == 'technicians') {
+        matches = (role == 'technician');
+      } else if (lowerFilter == 'administrators') {
+        matches = (role == 'administrator');
+      } else {
+        matches = (status == lowerFilter);
+      }
+
+      if (matches) {
         result.add(user);
       }
     }
@@ -410,23 +444,23 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: _CountTile(
+                      count: _countFor('Reporters'),
+                      label: 'Reporters',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _CountTile(
+                      count: _countFor('Technicians'),
+                      label: 'Technicians',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _CountTile(
                       count: _countFor('Pending'),
                       label: 'Pending',
                       highlight: _countFor('Pending') > 0,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _CountTile(
-                      count: _countFor('Approved'),
-                      label: 'Approved',
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _CountTile(
-                      count: _countFor('Rejected'),
-                      label: 'Rejected',
                     ),
                   ),
                 ],

@@ -148,7 +148,7 @@ class EmailNotificationTests(unittest.TestCase):
         self.assertIn("A technician accepted your ticket.", send_email.call_args.args[2])
 
     @patch("email_notifications.send_email")
-    def test_whatsapp_ticket_does_not_email_reporter_updates(self, send_email):
+    def test_whatsapp_ticket_emails_reporter_updates(self, send_email):
         self.db.add(
             TicketHistory(
                 ticket_id=self.ticket.id,
@@ -166,8 +166,8 @@ class EmailNotificationTests(unittest.TestCase):
             self.technician,
             "Your device is ready.",
         )
-        self.assertFalse(notify_reporter_resolved(self.db, self.ticket))
-        self.assertFalse(
+        self.assertTrue(notify_reporter_resolved(self.db, self.ticket))
+        self.assertTrue(
             notify_reporter_status_update(
                 self.db,
                 self.ticket,
@@ -177,7 +177,13 @@ class EmailNotificationTests(unittest.TestCase):
 
         self.assertEqual(
             [call.args[0] for call in send_email.call_args_list],
-            [self.technician.email],
+            [
+                self.reporter.email,
+                self.technician.email,
+                self.reporter.email,
+                self.reporter.email,
+                self.reporter.email,
+            ],
         )
 
     @patch("email_notifications.send_email")
