@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -24,6 +25,43 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   String _selectedUrgency = 'Medium';
   bool _isSubmitting = false;
   String? _attachedImageName;
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      if (image != null) {
+        setState(() {
+          _attachedImageName = image.name;
+        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Attached: ${image.name}'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {
+      setState(() {
+        _attachedImageName = source == ImageSource.camera
+            ? 'Camera_Capture_${DateTime.now().millisecondsSinceEpoch}.jpg'
+            : 'Gallery_Image_${DateTime.now().millisecondsSinceEpoch}.png';
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Photo attached successfully (Optional)'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
 
   static const Color success = AppTheme.accentTeal;
 
@@ -125,16 +163,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                 title: const Text('Take a picture with camera'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  setState(() {
-                    _attachedImageName =
-                        'Camera_Capture_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Photo attached successfully (Optional)'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
+                  _pickImage(ImageSource.camera);
                 },
               ),
               ListTile(
@@ -142,16 +171,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                 title: const Text('Choose from gallery'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  setState(() {
-                    _attachedImageName =
-                        'Gallery_Image_${DateTime.now().millisecondsSinceEpoch}.png';
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Image attached from gallery (Optional)'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
+                  _pickImage(ImageSource.gallery);
                 },
               ),
             ],
@@ -414,45 +434,172 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
     );
   }
 
-  Widget _buildDropdown({
+  Widget _buildSegmentedLevelSelector({
     required String label,
     required String value,
     required List<String> items,
-    required ValueChanged<String?> onChanged,
+    required ValueChanged<String> onChanged,
     required IconData icon,
   }) {
     final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: theme.colorScheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: items.map((item) {
+            final isSelected = value == item;
+            final isHigh = item == 'High';
+            final activeColor = isHigh
+                ? const Color(0xFFEA580C)
+                : AppTheme.accentTeal;
 
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: theme.colorScheme.primary),
-        filled: true,
-        fillColor: theme.cardColor,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: InkWell(
+                  onTap: () => onChanged(item),
+                  borderRadius: BorderRadius.circular(10),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? activeColor.withValues(alpha: 0.14)
+                          : theme.cardColor,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected
+                            ? activeColor
+                            : theme.colorScheme.outlineVariant,
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      item,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isSelected ? activeColor : theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
         ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
-        ),
-      ),
-      items: items
-          .map(
-            (item) => DropdownMenuItem<String>(value: item, child: Text(item)),
-          )
-          .toList(),
-      onChanged: onChanged,
+      ],
+    );
+  }
+
+  Widget _buildCategoryGridSelector() {
+    final theme = Theme.of(context);
+    return FormField<String>(
+      initialValue: _selectedCategory,
+      validator: (val) {
+        if (_selectedCategory == null || _selectedCategory!.isEmpty) {
+          return 'Please select a category';
+        }
+        return null;
+      },
+      builder: (state) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 2.2,
+              ),
+              itemCount: _categories.length,
+              itemBuilder: (context, index) {
+                final cat = _categories[index];
+                final isSelected = _selectedCategory == cat;
+                return InkWell(
+                  onTap: () {
+                    setState(() => _selectedCategory = cat);
+                    state.didChange(cat);
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppTheme.accentTeal.withValues(alpha: 0.14)
+                          : theme.cardColor,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppTheme.accentTeal
+                            : theme.colorScheme.outlineVariant,
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _categoryIcon(cat),
+                          size: 15,
+                          color: isSelected
+                              ? AppTheme.accentTeal
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            cat,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              color: isSelected
+                                  ? AppTheme.accentTeal
+                                  : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            if (state.hasError) ...[
+              const SizedBox(height: 6),
+              Text(
+                state.errorText!,
+                style: TextStyle(
+                  color: theme.colorScheme.error,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -570,85 +717,34 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                   requiredField: true,
                 ),
                 const SizedBox(height: 16),
-
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedCategory,
-                  decoration: InputDecoration(
-                    labelText: 'Category',
-                    prefixIcon: Icon(
-                      _selectedCategory == null
-                          ? Icons.category_outlined
-                          : _categoryIcon(_selectedCategory!),
-                      color: theme.colorScheme.primary,
-                    ),
-                    filled: true,
-                    fillColor: theme.cardColor,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: borderColor),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: borderColor),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 1.5,
-                      ),
-                    ),
-                  ),
-                  hint: const Text('Select issue category'),
-                  items: _categories
-                      .map(
-                        (category) => DropdownMenuItem<String>(
-                          value: category,
-                          child: Text(category),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    setState(() => _selectedCategory = value);
-                  },
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please select a category';
-                    }
-                    return null;
-                  },
+                _sectionHeading(
+                  'Category',
+                  'Select the area that best describes your IT issue.',
                 ),
+                _buildCategoryGridSelector(),
                 const SizedBox(height: 24),
 
                 _sectionHeading(
                   'Impact and Urgency',
                   'These selections help the system prioritize your request.',
                 ),
-                _buildDropdown(
-                  label: 'Impact',
+                _buildSegmentedLevelSelector(
+                  label: 'Impact (Who or how many are affected)',
                   value: _selectedImpact,
                   items: _levels,
                   icon: Icons.groups_outlined,
                   onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _selectedImpact = value);
-                    }
+                    setState(() => _selectedImpact = value);
                   },
                 ),
                 const SizedBox(height: 16),
-                _buildDropdown(
-                  label: 'Urgency',
+                _buildSegmentedLevelSelector(
+                  label: 'Urgency (How quickly this needs attention)',
                   value: _selectedUrgency,
                   items: _levels,
                   icon: Icons.schedule_rounded,
                   onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _selectedUrgency = value);
-                    }
+                    setState(() => _selectedUrgency = value);
                   },
                 ),
                 const SizedBox(height: 14),

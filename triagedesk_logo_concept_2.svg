@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">TriageDesk logo concept 2</title>
+  <desc id="desc">Three support paths merge at a routing hub beside the TriageDesk wordmark.</desc>
+  <rect width="1200" height="520" rx="32" fill="#F2F7F6"/>
+  <rect x="56" y="48" width="1088" height="424" rx="28" fill="#FFFFFF"/>
+
+  <!-- Three incoming requests converge into one clear route. -->
+  <g transform="translate(112 100)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="320" height="320" rx="82" fill="#064E56" stroke="none"/>
+    <path d="M76 102h69l53 58h63" stroke="#FFFFFF" stroke-width="16"/>
+    <path d="M76 160h185" stroke="#7FE3D6" stroke-width="16"/>
+    <path d="M76 218h69l53-58" stroke="#FFFFFF" stroke-width="16"/>
+    <circle cx="76" cy="102" r="10" fill="#E5B64F" stroke="none"/>
+    <circle cx="76" cy="160" r="10" fill="#7FE3D6" stroke="none"/>
+    <circle cx="76" cy="218" r="10" fill="#E5B64F" stroke="none"/>
+    <circle cx="198" cy="160" r="25" fill="#0A8F86" stroke="#FFFFFF" stroke-width="8"/>
+    <circle cx="262" cy="160" r="9" fill="#E5B64F" stroke="none"/>
+  </g>
+
+  <g font-family="Plus Jakarta Sans, Avenir Next, Segoe UI, sans-serif">
+    <text x="500" y="271" fill="#17343A" font-size="76" font-weight="750" letter-spacing="-3">Triage<tspan fill="#0A8F86">Desk</tspan></text>
+    <path d="M506 310h104" stroke="#E5B64F" stroke-linecap="round" stroke-width="7"/>
+    <text x="506" y="363" fill="#587176" font-size="25" font-weight="500" letter-spacing="0.4">The right help, routed.</text>
+  </g>
+</svg>

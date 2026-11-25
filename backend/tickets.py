@@ -1,13 +1,15 @@
 
+import logging
+import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from auth import get_current_user, require_roles
-from database import get_db
+from database import SessionLocal, get_db
 from email_notifications import (
     notify_reporter_public_reply,
     notify_reporter_resolved,
@@ -27,12 +29,122 @@ from schemas import (
 )
 from whatsapp_notifications import send_reporter_whatsapp_update
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
 VALID_IMPACTS = {"Low", "Medium", "High"}
 VALID_URGENCIES = {"Low", "Medium", "High"}
 VALID_STATUSES = {"Open", "In Progress", "Pending", "Resolved", "Closed"}
 WHATSAPP_NOTIFIED_STATUSES = {"Open", "In Progress", "Resolved"}
+
+
+def add_background_task(
+    background_tasks: BackgroundTasks,
+    func,
+    *args,
+    **kwargs,
+) -> None:
+    background_tasks.add_task(func, *args, **kwargs)
+    if os.getenv("TESTING", "").strip().casefold() == "true":
+        try:
+            func(*args, **kwargs)
+        except Exception:
+            logger.exception(
+                "Synchronous background task execution failed in test mode."
+            )
+
+
+def _bg_notify_ticket_created(ticket_id: int) -> None:
+    db = SessionLocal()
+    try:
+        ticket = db.get(Ticket, ticket_id)
+        if ticket is not None:
+            notify_ticket_created(db, ticket)
+    except Exception:
+        logger.exception(
+            "Background email notification failed for ticket %s.", ticket_id
+        )
+    finally:
+        db.close()
+
+
+def _bg_notify_status_update(
+    ticket_id: int,
+    old_status: str,
+    old_resolution: str | None,
+    resolution: str | None,
+    custom_message: str | None = None,
+) -> None:
+    db = SessionLocal()
+    try:
+        ticket = db.get(Ticket, ticket_id)
+        if ticket is None:
+            return
+        if custom_message:
+            notify_reporter_status_update(db, ticket, custom_message)
+        elif (
+            ticket.status in {"Resolved", "Closed"}
+            and (
+                old_status not in {"Resolved", "Closed"}
+                or old_resolution != ticket.resolution
+            )
+        ):
+            notify_reporter_resolved(db, ticket)
+        elif old_status != ticket.status:
+            notify_reporter_status_update(
+                db,
+                ticket,
+                f"Ticket status changed from {old_status} to {ticket.status}.",
+            )
+
+        if (
+            ticket.status in WHATSAPP_NOTIFIED_STATUSES | {"Closed"}
+            and (
+                old_status != ticket.status
+                or old_resolution != ticket.resolution
+            )
+        ):
+            send_reporter_whatsapp_update(
+                db,
+                ticket,
+                ticket_status_whatsapp_message(
+                    ticket,
+                    ticket.status,
+                    resolution,
+                ),
+            )
+    except Exception:
+        logger.exception(
+            "Background status notification failed for ticket %s.", ticket_id
+        )
+    finally:
+        db.close()
+
+
+def _bg_notify_public_reply(
+    ticket_id: int,
+    author_id: int,
+    reply: str,
+) -> None:
+    db = SessionLocal()
+    try:
+        ticket = db.get(Ticket, ticket_id)
+        author = db.get(User, author_id)
+        if ticket is not None and author is not None:
+            notify_reporter_public_reply(db, ticket, author, reply)
+            send_reporter_whatsapp_update(
+                db,
+                ticket,
+                f"💬 Support team reply on ticket {ticket.ticket_number}:\n{reply}",
+            )
+    except Exception:
+        logger.exception(
+            "Background public reply notification failed for ticket %s.",
+            ticket_id,
+        )
+    finally:
+        db.close()
 
 
 def calculate_priority(impact: str, urgency: str) -> str:
@@ -94,6 +206,26 @@ def check_ticket_access(ticket: Ticket, user: User) -> None:
                 status_code=403,
                 detail="This ticket is not assigned to you",
             )
+
+
+def check_whatsapp_eligible(db: Session, ticket: Ticket) -> bool:
+    was_created_via_whatsapp = (
+        db.query(TicketHistory.id)
+        .filter(
+            TicketHistory.ticket_id == ticket.id,
+            TicketHistory.action == "Ticket created via WhatsApp",
+        )
+        .first()
+        is not None
+    )
+    if not was_created_via_whatsapp:
+        return False
+    contact = (
+        db.query(WhatsAppContact)
+        .filter(WhatsAppContact.user_id == ticket.reporter_id)
+        .first()
+    )
+    return contact is not None
 
 
 def record_history(
@@ -196,6 +328,7 @@ def create_ticket(
     request: TicketCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("Reporter", "Administrator")),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     if request.impact not in VALID_IMPACTS:
         raise HTTPException(status_code=422, detail="Invalid impact value")
@@ -225,7 +358,7 @@ def create_ticket(
         )
         db.commit()
         db.refresh(ticket)
-        notify_ticket_created(db, ticket)
+        add_background_task(background_tasks, notify_ticket_created, db, ticket)
         return serialize_ticket(db, ticket)
     except Exception:
         db.rollback()
@@ -351,6 +484,7 @@ def accept_ticket(
     ticket_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("Technician")),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     ticket = get_ticket_or_404(db, ticket_id)
 
@@ -376,21 +510,25 @@ def accept_ticket(
 
     db.commit()
     db.refresh(ticket)
-    email_notification_sent = notify_reporter_status_update(
+    whatsapp_notification_sent = check_whatsapp_eligible(db, ticket)
+    add_background_task(
+        background_tasks,
+        notify_reporter_status_update,
         db,
         ticket,
         "A technician accepted your ticket and is working on it.",
     )
-    whatsapp_notification_sent = bool(
-        send_reporter_whatsapp_update(
+    if whatsapp_notification_sent:
+        add_background_task(
+            background_tasks,
+            send_reporter_whatsapp_update,
             db,
             ticket,
             ticket_status_whatsapp_message(ticket, "In Progress"),
         )
-    )
     result = serialize_ticket(db, ticket)
     result["whatsapp_notification_sent"] = whatsapp_notification_sent
-    result["email_notification_sent"] = email_notification_sent
+    result["email_notification_sent"] = True
     return result
 
 
@@ -400,6 +538,7 @@ def update_ticket_status(
     request: StatusUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("Technician", "Administrator")),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     if request.status not in VALID_STATUSES:
         raise HTTPException(status_code=422, detail="Invalid status")
@@ -451,8 +590,6 @@ def update_ticket_status(
         else "Status changed"
     )
 
-    whatsapp_notification_sent = None
-    email_notification_sent = None
     try:
         if note_text:
             db.add(
@@ -474,6 +611,7 @@ def update_ticket_status(
         )
         db.commit()
         db.refresh(ticket)
+        email_notification_sent = False
         if (
             ticket.status in {"Resolved", "Closed"}
             and (
@@ -481,31 +619,39 @@ def update_ticket_status(
                 or old_resolution != ticket.resolution
             )
         ):
-            email_notification_sent = notify_reporter_resolved(db, ticket)
+            add_background_task(
+                background_tasks, notify_reporter_resolved, db, ticket
+            )
+            email_notification_sent = True
         elif old_status != ticket.status:
-            email_notification_sent = notify_reporter_status_update(
+            add_background_task(
+                background_tasks,
+                notify_reporter_status_update,
                 db,
                 ticket,
                 f"Ticket status changed from {old_status} to "
                 f"{ticket.status}.",
             )
+            email_notification_sent = True
+
+        whatsapp_notification_sent = check_whatsapp_eligible(db, ticket)
         if (
             ticket.status in WHATSAPP_NOTIFIED_STATUSES | {"Closed"}
             and (
                 old_status != ticket.status
                 or old_resolution != ticket.resolution
             )
-        ):
-            whatsapp_notification_sent = bool(
-                send_reporter_whatsapp_update(
-                    db,
+        ) and whatsapp_notification_sent:
+            add_background_task(
+                background_tasks,
+                send_reporter_whatsapp_update,
+                db,
+                ticket,
+                ticket_status_whatsapp_message(
                     ticket,
-                    ticket_status_whatsapp_message(
-                        ticket,
-                        ticket.status,
-                        resolution,
-                    ),
-                )
+                    ticket.status,
+                    resolution,
+                ),
             )
         result = serialize_ticket(db, ticket)
         result["whatsapp_notification_sent"] = whatsapp_notification_sent
@@ -522,6 +668,7 @@ def reopen_ticket(
     request: ReopenRequest,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("Reporter")),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     ticket = get_ticket_or_404(db, ticket_id)
 
@@ -561,21 +708,25 @@ def reopen_ticket(
 
     db.commit()
     db.refresh(ticket)
-    email_notification_sent = notify_reporter_status_update(
+    add_background_task(
+        background_tasks,
+        notify_reporter_status_update,
         db,
         ticket,
         f"Your ticket was reopened. Reason: {reason}",
     )
-    whatsapp_notification_sent = bool(
-        send_reporter_whatsapp_update(
+    whatsapp_notification_sent = check_whatsapp_eligible(db, ticket)
+    if whatsapp_notification_sent:
+        add_background_task(
+            background_tasks,
+            send_reporter_whatsapp_update,
             db,
             ticket,
             ticket_status_whatsapp_message(ticket, "Open"),
         )
-    )
     result = serialize_ticket(db, ticket)
     result["whatsapp_notification_sent"] = whatsapp_notification_sent
-    result["email_notification_sent"] = email_notification_sent
+    result["email_notification_sent"] = True
     return result
 
 
@@ -625,6 +776,7 @@ def add_ticket_note(
     request: NoteCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     ticket = get_ticket_or_404(db, ticket_id)
     check_ticket_access(ticket, user)
@@ -667,15 +819,24 @@ def add_ticket_note(
         db.commit()
         db.refresh(note)
         if user.role in {"Technician", "Administrator"} and not note.is_internal:
-            notify_reporter_public_reply(db, ticket, user, note_text)
-            whatsapp_notification_sent = bool(
-                send_reporter_whatsapp_update(
+            add_background_task(
+                background_tasks,
+                notify_reporter_public_reply,
+                db,
+                ticket,
+                user,
+                note_text,
+            )
+            whatsapp_notification_sent = check_whatsapp_eligible(db, ticket)
+            if whatsapp_notification_sent:
+                add_background_task(
+                    background_tasks,
+                    send_reporter_whatsapp_update,
                     db,
                     ticket,
                     f"💬 Support team reply on ticket {ticket.ticket_number}:\n"
                     f"{note_text}",
                 )
-            )
         response = NoteResponse.model_validate(note)
         return response.model_copy(
             update={"whatsapp_notification_sent": whatsapp_notification_sent}

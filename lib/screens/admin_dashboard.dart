@@ -66,6 +66,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   bool _isLoading = true;
   String? _loadError;
   int _pendingApprovals = 0;
+  List<Map<String, dynamic>> _technicians = [];
   List<Map<String, dynamic>> _whatsAppNotifications = [];
   final Set<int> _unreadWhatsAppNotificationIds = {};
   Timer? _notificationTimer;
@@ -132,8 +133,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  /// Best effort: powers the "accounts waiting" banner. Errors are ignored so
-  /// the dashboard still works if the users endpoint is unavailable.
+  /// Best effort: powers the accounts waiting banner and technician workload.
+  /// Errors are ignored so the dashboard still works if users are unavailable.
   Future<void> _loadPendingApprovals() async {
     if (_approvalLoadInProgress) return;
     _approvalLoadInProgress = true;
@@ -147,8 +148,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
             .toLowerCase();
         return s.isEmpty || s == 'pending';
       }).length;
+      final technicians = users
+          .whereType<Map>()
+          .map((user) => Map<String, dynamic>.from(user))
+          .where(
+            (user) =>
+                user['role']?.toString().toLowerCase() == 'technician',
+          )
+          .toList();
       if (!mounted) return;
-      setState(() => _pendingApprovals = pending);
+      setState(() {
+        _pendingApprovals = pending;
+        _technicians = technicians;
+      });
     } catch (_) {
       // The dashboard remains usable if the approvals endpoint is unavailable.
     } finally {
@@ -409,6 +421,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ? _buildLoadError()
             : AdminTicketsScreen(tickets: tickets, onRefresh: _loadTickets),
       3 => AdminReportsScreen(tickets: tickets),
+      4 => const SettingsScreen(),
       _ =>
         _isLoading && tickets.isEmpty
             ? const Center(child: CircularProgressIndicator())
@@ -418,40 +431,39 @@ class _AdminDashboardState extends State<AdminDashboard> {
     };
 
     return Scaffold(
-      appBar: TdBrandedAppBar(
-        initials: ApiService.currentUserInitials,
-        showNotificationDot:
-            _pendingApprovals > 0 || _unreadWhatsAppNotificationIds.isNotEmpty,
-        onNotificationsTap: _openNotifications,
-        onAvatarTap: _openAccountSheet,
-      ),
+      appBar: _currentIndex == 4
+          ? null
+          : TdBrandedAppBar(
+              initials: ApiService.currentUserInitials,
+              showNotificationDot:
+                  _pendingApprovals > 0 || _unreadWhatsAppNotificationIds.isNotEmpty,
+              onNotificationsTap: _openNotifications,
+              onAvatarTap: _openAccountSheet,
+            ),
       body: SafeArea(
         top: false,
         bottom: false,
-        child: Column(
-          children: [
-            TdUserHeader(
-              name: ApiService.currentUserName.isEmpty
-                  ? 'Administrator'
-                  : ApiService.currentUserName,
-              role: 'Administrator',
-              email: ApiService.currentUserEmail,
-              initials: ApiService.currentUserInitials,
-              onAvatarTap: _openAccountSheet,
-            ),
-            Expanded(child: body),
-          ],
-        ),
+        child: _currentIndex == 4
+            ? const SettingsScreen()
+            : Column(
+                children: [
+                  TdUserHeader(
+                    name: ApiService.currentUserName.isEmpty
+                        ? 'Administrator'
+                        : ApiService.currentUserName,
+                    role: 'Administrator',
+                    email: ApiService.currentUserEmail,
+                    initials: ApiService.currentUserInitials,
+                    onAvatarTap: _openAccountSheet,
+                  ),
+                  Expanded(child: body),
+                ],
+              ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
-          if (index == 4) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            );
-          } else if (index == 2) {
+          if (index == 2) {
             _openUsers();
           } else {
             setState(() => _currentIndex = index);
@@ -479,9 +491,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
             label: 'Reports',
           ),
           NavigationDestination(
-            icon: Icon(Icons.tune_rounded),
-            selectedIcon: Icon(Icons.tune_rounded),
-            label: 'Settings',
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
           ),
         ],
       ),
@@ -564,25 +576,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ? 1
         : categoryEntries.first.value;
 
-    // Calculate technician workload distribution from tickets
-    final techWorkloadMap = <String, (int active, int resolved)>{};
-    for (final ticket in tickets) {
-      final techName = ticket.assignedTechnician;
-      if (techName != null && techName.isNotEmpty) {
-        final current = techWorkloadMap[techName] ?? (0, 0);
-        if (ticket.status == 'Resolved' || ticket.status == 'Closed') {
-          techWorkloadMap[techName] = (current.$1, current.$2 + 1);
-        } else {
-          techWorkloadMap[techName] = (current.$1 + 1, current.$2);
-        }
-      }
-    }
-
-    final techWorkloads = techWorkloadMap.entries
-        .map((e) => (
-              name: e.key,
-              activeCount: e.value.$1,
-              resolvedCount: e.value.$2,
+    // Use administrator-provided counts so technicians with no tickets yet
+    // still appear in the workload panel.
+    final techWorkloads = _technicians
+        .map((user) => (
+              name: user['full_name']?.toString() ?? 'Technician',
+              activeCount:
+                  (user['assigned_tickets_count'] as num?)?.toInt() ?? 0,
+              resolvedCount:
+                  (user['resolved_tickets_count'] as num?)?.toInt() ?? 0,
             ))
         .toList()
       ..sort((a, b) => b.activeCount != a.activeCount
@@ -810,15 +812,29 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     'No technician workload recorded yet.',
                     style: theme.textTheme.bodySmall,
                   )
-                else
-                  for (final tw in techWorkloads) ...[
-                    _TechnicianWorkloadRow(
-                      name: tw.name,
-                      activeCount: tw.activeCount,
-                      resolvedCount: tw.resolvedCount,
-                    ),
-                    const SizedBox(height: 10),
-                  ],
+                else ...[
+                  Builder(
+                    builder: (context) {
+                      final totalResolvedAll = techWorkloads.fold<int>(
+                        0,
+                        (a, b) => a + b.resolvedCount,
+                      );
+                      return Column(
+                        children: techWorkloads.map((tw) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _TechnicianWorkloadRow(
+                              name: tw.name,
+                              activeCount: tw.activeCount,
+                              resolvedCount: tw.resolvedCount,
+                              totalResolvedAll: totalResolvedAll,
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -893,11 +909,18 @@ class _KpiCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: theme.dividerColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -906,20 +929,20 @@ class _KpiCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 24,
+                height: 24,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(7),
                 ),
-                child: Icon(icon, size: 17, color: color),
+                child: Icon(icon, size: 13, color: color),
               ),
               Flexible(
                 child: Text(
                   note,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: FontWeight.w700,
                     color: color,
                   ),
@@ -927,9 +950,23 @@ class _KpiCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text('$value', style: TdFonts.monoStyle.copyWith(fontSize: 26)),
-          Text(label, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 5),
+          Text(
+            '$value',
+            style: TdFonts.monoStyle.copyWith(
+              fontSize: 18,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );
@@ -1125,7 +1162,7 @@ class _VolumePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final chartHeight = size.height;
     final gridPaint = Paint()
-      ..color = gridColor.withValues(alpha: 0.7)
+      ..color = gridColor.withValues(alpha: 0.5)
       ..strokeWidth = 1;
     for (var row = 0; row < 4; row++) {
       final y = (chartHeight - 4) * row / 3;
@@ -1134,20 +1171,24 @@ class _VolumePainter extends CustomPainter {
 
     final maximum = values.fold<int>(0, (a, b) => b > a ? b : a);
     final scale = maximum == 0 ? 1 : maximum;
-    final usable = chartHeight - 12;
+    final usable = chartHeight - 14;
 
     final points = List.generate(values.length, (i) {
       final x = values.length == 1
           ? size.width / 2
           : size.width * i / (values.length - 1);
-      final y = 6 + usable - (usable * values[i] / scale);
+      final y = 7 + usable - (usable * values[i] / scale);
       return Offset(x, y);
     });
 
     final line = Path()..moveTo(points.first.dx, points.first.dy);
-    for (var i = 1; i < points.length; i++) {
-      line.lineTo(points[i].dx, points[i].dy);
+    for (var i = 0; i < points.length - 1; i++) {
+      final p0 = points[i];
+      final p1 = points[i + 1];
+      final ctrlX = (p0.dx + p1.dx) / 2;
+      line.cubicTo(ctrlX, p0.dy, ctrlX, p1.dy, p1.dx, p1.dy);
     }
+
     final fill = Path.from(line)
       ..lineTo(points.last.dx, chartHeight)
       ..lineTo(points.first.dx, chartHeight)
@@ -1157,7 +1198,7 @@ class _VolumePainter extends CustomPainter {
       fill,
       Paint()
         ..shader = LinearGradient(
-          colors: [color.withValues(alpha: 0.26), color.withValues(alpha: 0.0)],
+          colors: [color.withValues(alpha: 0.3), color.withValues(alpha: 0.0)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ).createShader(Offset.zero & size),
@@ -1167,20 +1208,27 @@ class _VolumePainter extends CustomPainter {
       Paint()
         ..color = color
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
+        ..strokeWidth = 2.8
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );
 
-    // Highlight today (last point)
-    canvas.drawCircle(points.last, 5, Paint()..color = Colors.white);
+    // Glowing halo for today (last point)
     canvas.drawCircle(
       points.last,
-      5,
+      8,
+      Paint()
+        ..color = color.withValues(alpha: 0.25)
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawCircle(points.last, 4.5, Paint()..color = Colors.white);
+    canvas.drawCircle(
+      points.last,
+      4.5,
       Paint()
         ..color = color
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
+        ..strokeWidth = 2.2,
     );
   }
 
@@ -1392,41 +1440,94 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         : categoryEntries.first.value;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+      padding: const EdgeInsets.fromLTRB(16, 7, 16, 28),
       children: [
-        Text('Reports', style: theme.textTheme.headlineMedium),
+        Text('Analytics & Reports', style: tdDashboardTitleStyle(context)),
         const SizedBox(height: 2),
         Text(
-          'Ticket overview and breakdown',
-          style: theme.textTheme.bodySmall?.copyWith(fontSize: 13.5),
-        ),
-        const SizedBox(height: 16),
-        Text('Download report', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _exportButton(
-              format: TicketReportFormat.pdf,
-              label: 'PDF',
-              icon: Icons.picture_as_pdf_outlined,
-            ),
-            _exportButton(
-              format: TicketReportFormat.word,
-              label: 'Word',
-              icon: Icons.description_outlined,
-            ),
-            _exportButton(
-              format: TicketReportFormat.excel,
-              label: 'Excel',
-              icon: Icons.table_chart_outlined,
-            ),
-          ],
+          'System metrics, ticket resolution breakdown, and exports.',
+          style: tdDashboardSubtitleStyle(context),
         ),
         const SizedBox(height: 16),
 
-        // Summary
+        // Export Toolbar Panel
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: theme.dividerColor),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Download report', style: theme.textTheme.titleMedium),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: TdColors.teal.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'PDF • Word • Excel',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        color: TdColors.teal,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Generate formatted report documents instantly.',
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 12.5),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _exportButton(
+                      format: TicketReportFormat.pdf,
+                      label: 'PDF',
+                      icon: Icons.picture_as_pdf_outlined,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _exportButton(
+                      format: TicketReportFormat.word,
+                      label: 'Word',
+                      icon: Icons.description_outlined,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _exportButton(
+                      format: TicketReportFormat.excel,
+                      label: 'Excel',
+                      icon: Icons.table_chart_outlined,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Summary KPI Row
         Row(
           children: [
             Expanded(
@@ -1516,11 +1617,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       onPressed: _exportingFormat == null ? () => _exportReport(format) : null,
       icon: isExporting
           ? const SizedBox.square(
-              dimension: 18,
+              dimension: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : Icon(icon),
-      label: Text(isExporting ? 'Preparing...' : label),
+          : Icon(icon, size: 18),
+      label: Text(isExporting ? 'Exporting...' : label),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 42),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
     );
   }
 }
@@ -1529,11 +1634,13 @@ class _TechnicianWorkloadRow extends StatelessWidget {
   final String name;
   final int activeCount;
   final int resolvedCount;
+  final int totalResolvedAll;
 
   const _TechnicianWorkloadRow({
     required this.name,
     required this.activeCount,
     required this.resolvedCount,
+    required this.totalResolvedAll,
   });
 
   @override
@@ -1544,6 +1651,14 @@ class _TechnicianWorkloadRow extends StatelessWidget {
       1 || 2 || 3 => (TdColors.blue, 'Moderate load'),
       _ => (TdColors.coral, 'Heavy load'),
     };
+
+    final totalTech = activeCount + resolvedCount;
+    final percentage = totalResolvedAll > 0
+        ? ((resolvedCount / totalResolvedAll) * 100).round()
+        : 0;
+    final resolutionRate = totalTech > 0
+        ? ((resolvedCount / totalTech) * 100).round()
+        : 0;
 
     final initials = name
         .trim()
@@ -1589,6 +1704,22 @@ class _TechnicianWorkloadRow extends StatelessWidget {
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.accentTeal.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '$percentage% Share',
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.accentTeal,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: statusColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6),
@@ -1606,25 +1737,35 @@ class _TechnicianWorkloadRow extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '🛠️ $activeCount active',
+                '🛠️ $activeCount active  •  ✅ $resolvedCount resolved',
                 style: TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
                   color: theme.colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(width: 12),
               Text(
-                '✅ $resolvedCount resolved',
+                'Rate: $resolutionRate%',
                 style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: totalTech > 0 ? (resolvedCount / totalTech) : 0,
+              minHeight: 5,
+              backgroundColor: theme.dividerColor,
+              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+            ),
           ),
         ],
       ),

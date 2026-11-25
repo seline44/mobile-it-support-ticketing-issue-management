@@ -7,11 +7,12 @@ import '../models/ticket.dart';
 import '../services/api_service.dart';
 import '../services/sound_service.dart';
 import '../services/whatsapp_contact.dart';
+import '../theme/app_theme.dart';
 import '../theme/td_theme.dart';
 import '../widgets/td_ticket_widgets.dart';
 import '../widgets/td_widgets.dart';
+import '../widgets/triagedesk_logo.dart';
 import '../widgets/whatsapp_support_panel.dart';
-import 'login_screen.dart';
 import 'settings_screen.dart';
 import 'ticket_details_screen.dart';
 
@@ -23,7 +24,7 @@ class TechnicianDashboard extends StatefulWidget {
 }
 
 class _TechnicianDashboardState extends State<TechnicianDashboard> {
-  // 0 Home, 1 Assigned, 2 Tickets, 3 WhatsApp, 4 Profile
+  // 0 Home, 1 Assigned, 2 Workload, 3 Tickets, 4 WhatsApp, 5 Profile
   int _currentIndex = 0;
 
   List<Ticket> _tickets = [];
@@ -206,7 +207,6 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     );
   }
 
-  // ---- Data logic (unchanged) ----------------------------------------------
   Future<void> _refreshTickets() async {
     if (_ticketRefreshInProgress) return;
     _ticketRefreshInProgress = true;
@@ -271,7 +271,7 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
       .where((ticket) => ticket.assignedTechnicianId == _technicianId)
       .length;
   int get _progressCount =>
-      _tickets.where((t) => t.status == 'In Progress').length;
+      _tickets.where((t) => t.status == 'In Progress' && t.assignedTechnicianId == _technicianId).length;
   int get _pendingCount => _tickets
       .where(
         (ticket) =>
@@ -349,56 +349,13 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
         ),
       ),
     );
-    // The technician may have changed the ticket, so refresh on return.
     if (mounted) _refreshTickets();
   }
 
-  Future<void> _confirmSignOut() async {
-    final shouldSignOut = await showTdSignOutDialog(context);
-    if (shouldSignOut && mounted) {
-      ApiService.logout();
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
-    }
-  }
-
-  // ---- Derived data ----------------------------------------------------------
-  /// Tickets assigned to this technician (never matches when id is unknown).
   List<Ticket> get _mine {
     final id = _technicianId;
     if (id == null) return [];
     return _tickets.where((t) => t.assignedTechnicianId == id).toList();
-  }
-
-  List<Ticket> get _myActive => _mine.where(tdIsActive).toList();
-
-  /// Most urgent active ticket: highest priority, then oldest first.
-  Ticket? get _upNext {
-    final active = _myActive;
-    if (active.isEmpty) return null;
-    active.sort((a, b) {
-      final byPriority = TdSignalBars.levelFor(b.priority)
-          .compareTo(TdSignalBars.levelFor(a.priority));
-      if (byPriority != 0) return byPriority;
-      return a.createdAt.compareTo(b.createdAt);
-    });
-    return active.first;
-  }
-
-  String get _firstName {
-    final name = _technicianName.trim();
-    if (name.isEmpty) return 'there';
-    return name.split(RegExp(r'\s+')).first;
-  }
-
-  String get _greeting {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
   }
 
   Map<String, int> _countsByStatus(List<Ticket> list) => {
@@ -410,40 +367,106 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
   // ---- UI --------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final initials = ApiService.currentUserInitials;
+
     return Scaffold(
-      appBar: TdBrandedAppBar(
-        initials: ApiService.currentUserInitials,
-        showNotificationDot:
-            _pendingCount > 0 || _unreadNotificationIds.isNotEmpty,
-        onNotificationsTap: _openNotifications,
-        onAvatarTap: () => setState(() => _currentIndex = 4),
-      ),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: _currentIndex == 4
+          ? null
+          : AppBar(
+              automaticallyImplyLeading: false,
+              titleSpacing: 20,
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.deepTeal,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const TriageDeskLogo(size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  RichText(
+                    text: TextSpan(
+                      style: TextStyle(
+                        fontFamily: 'PlusJakartaSans',
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: colors.onSurface,
+                        letterSpacing: -0.4,
+                      ),
+                      children: const [
+                        TextSpan(text: 'Triage'),
+                        TextSpan(
+                          text: 'Desk',
+                          style: TextStyle(color: AppTheme.accentTeal),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  Stack(
+                    children: [
+                      IconButton(
+                        tooltip: 'Notifications',
+                        icon: Icon(
+                          Icons.notifications_none_rounded,
+                          color: colors.onSurface,
+                          size: 24,
+                        ),
+                        onPressed: _openNotifications,
+                      ),
+                      if (_pendingCount > 0 || _unreadNotificationIds.isNotEmpty)
+                        Positioned(
+                          right: 10,
+                          top: 10,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFE2574C),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: () => setState(() => _currentIndex = 4),
+                    child: CircleAvatar(
+                      radius: 16,
+                      backgroundColor: AppTheme.deepTeal,
+                      child: Text(
+                        initials,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
       body: SafeArea(
         top: false,
         bottom: false,
-        child: Column(
-          children: [
-            TdUserHeader(
-              name: _technicianName.isEmpty ? 'Technician' : _technicianName,
-              role: 'Technician',
-              email: _technicianEmail,
-              initials: ApiService.currentUserInitials,
-              onAvatarTap: () => setState(() => _currentIndex = 4),
-            ),
-            Expanded(
-              child: switch (_currentIndex) {
+        child: _currentIndex == 4
+            ? const SettingsScreen()
+            : switch (_currentIndex) {
                 1 => _buildAssignedTab(),
                 2 => _buildTicketsTab(),
                 3 => _buildWhatsAppTab(),
-                4 => _buildProfileTab(),
                 _ => _buildHomeTab(),
               },
-            ),
-          ],
-        ),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
+        selectedIndex: _currentIndex > 4 ? 0 : _currentIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
         destinations: const [
           NavigationDestination(
@@ -488,7 +511,6 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     );
   }
 
-  // ---- Shared body states ----------------------------------------------------
   Widget? _loadingOrError() {
     if (_loading && _tickets.isEmpty) {
       return const Padding(
@@ -508,126 +530,289 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     return null;
   }
 
-  // ---- Home --------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Home Tab (Matching User UI Image)
+  // ---------------------------------------------------------------------------
   Widget _buildHomeTab() {
     final theme = Theme.of(context);
-    final next = _upNext;
-    final others = _myActive.where((t) => !identical(t, next)).take(3).toList();
-    final urgent = _myActive
-        .where((t) => TdSignalBars.levelFor(t.priority) >= 3)
-        .length;
-
-    final recent =
-        (_tickets.toList()
-              ..sort((a, b) => tdLastTouched(b).compareTo(tdLastTouched(a))))
-            .take(3)
-            .toList();
-    final available = _availableTickets.take(3).toList();
+    final initials = ApiService.currentUserInitials;
+    final available = _availableTickets;
+    final recent = (_tickets.toList()
+          ..sort((a, b) => tdLastTouched(b).compareTo(tdLastTouched(a))))
+        .take(3)
+        .toList();
 
     return RefreshIndicator(
       color: theme.colorScheme.primary,
       onRefresh: _refreshTickets,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 7, 16, 20),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
         children: [
-          Text(
-            '$_greeting, $_firstName.',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tdDashboardTitleStyle(context),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            urgent > 0
-                ? 'You have $urgent ticket${urgent == 1 ? '' : 's'} that need${urgent == 1 ? 's' : ''} attention first.'
-                : 'Here\'s what\'s on your plate today.',
-            style: tdDashboardSubtitleStyle(context),
+          // 1. Hero Technician Profile Card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF042D34),
+                  Color(0xFF07454E),
+                  Color(0xFF0A8F86),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF06505A).withValues(alpha: 0.25),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Stack(
+                  children: [
+                    Container(
+                      width: 62,
+                      height: 62,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF7FE3D6),
+                          width: 2.5,
+                        ),
+                        color: const Color(0xFF073C42),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        initials,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: 2,
+                      bottom: 2,
+                      child: Container(
+                        width: 15,
+                        height: 15,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2E9D6B),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFF042D34),
+                            width: 2.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _technicianName.isEmpty ? 'Technician' : _technicianName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _technicianEmail.isNotEmpty
+                            ? _technicianEmail
+                            : 'technician@triagedesk.app',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(
+                              Icons.build_outlined,
+                              size: 13,
+                              color: Colors.white,
+                            ),
+                            SizedBox(width: 5),
+                            Text(
+                              'Technician',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.headset_mic_outlined,
+                      color: Colors.white.withValues(alpha: 0.45),
+                      size: 28,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Here to keep\ncampus connected.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.65),
+                        fontSize: 9.5,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
+
+          // 2. Metric Stat Cards Row (3 Elevated Cards)
           Row(
             children: [
               Expanded(
-                child: TdStatCard(
-                  value: _assignedCount,
-                  label: 'Assigned',
-                  color: theme.colorScheme.onSurface,
+                child: _HeroMetricCard(
+                  icon: Icons.confirmation_number_outlined,
+                  iconColor: AppTheme.accentTeal,
+                  count: '$_assignedCount',
+                  label: 'Assigned\nto me',
+                  onTap: () => setState(() => _currentIndex = 1),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
-                child: TdStatCard(
-                  value: _progressCount,
+                child: _HeroMetricCard(
+                  icon: Icons.sync_rounded,
+                  iconColor: const Color(0xFF2F7FC1),
+                  count: '$_progressCount',
                   label: 'In progress',
-                  color: TdColors.progressFg,
+                  onTap: () => setState(() => _currentIndex = 1),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
-                child: TdStatCard(
-                  value: _pendingCount,
-                  label: 'Unclaimed',
-                  color: TdColors.openFg,
+                child: _HeroMetricCard(
+                  icon: Icons.check_circle_outline_rounded,
+                  iconColor: const Color(0xFF2E9D6B),
+                  count: '$_pendingCount',
+                  label: 'Available',
+                  onTap: () => setState(() => _currentIndex = 3),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
+
+          // 4. "Available to claim" Section
+          _HeaderRow(
+            title: 'Available to claim',
+            actionLabel: 'View all',
+            onAction: () => setState(() => _currentIndex = 3),
+          ),
+          const SizedBox(height: 12),
           if (_loadingOrError() != null)
             _loadingOrError()!
-          else ...[
-            if (next != null) ...[
-              _UpNextCard(ticket: next, onOpen: () => _openTicket(next)),
-              const SizedBox(height: 22),
-            ],
-            if (_mine.isEmpty && available.isEmpty)
-              const TdEmptyState(
-                icon: Icons.inbox_outlined,
-                title: 'Nothing assigned yet',
-                message: 'Tickets assigned to you will show up here.',
-              )
-            else if (others.isNotEmpty) ...[
-              TdSectionHeader(
-                title: 'Assigned to you',
-                actionLabel: 'View all',
-                onAction: () => setState(() => _currentIndex = 1),
+          else if (available.isEmpty)
+            const TdEmptyState(
+              icon: Icons.check_circle_outline_rounded,
+              title: 'No unassigned tickets',
+              message: 'All incoming tickets have been claimed by technicians.',
+            )
+          else
+            for (final t in available.take(2))
+              _ClaimTicketCard(
+                ticket: t,
+                onTap: () => _openTicket(t),
+                onAccept: () => _acceptTicket(t),
+                isAccepting: _acceptingTicketIds.contains(t.id),
               ),
-              for (final t in others)
-                TdTicketCard(ticket: t, onTap: () => _openTicket(t)),
-            ],
-            if (available.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              const TdSectionHeader(title: 'Available to claim'),
-              for (final t in available)
-                TdTicketCard(
-                  ticket: t,
-                  onTap: () => _openTicket(t),
-                  onAccept: () => _acceptTicket(t),
-                  isAccepting: _acceptingTicketIds.contains(t.id),
+
+          const SizedBox(height: 24),
+
+          // 5. "Recent Activity" Section
+          _HeaderRow(
+            title: 'Recent Activity',
+            actionLabel: 'View all',
+            onAction: () => _openNotifications(),
+          ),
+          const SizedBox(height: 12),
+          if (recent.isEmpty)
+            Text(
+              'No recent ticket activity.',
+              style: theme.textTheme.bodySmall,
+            )
+          else
+            for (final t in recent)
+              _ActivityTile(
+                initials: ApiService.currentUserInitials,
+                name: t.reporterName ?? t.lastModifiedBy ?? 'Reporter Seline',
+                action: t.lastModifiedBy == null
+                    ? 'Updated ticket status: ${t.status}'
+                    : '${t.lastModifiedBy} updated ticket',
+                categoryAndTime:
+                    '${t.category} • ${tdFormatDateTime(context, tdLastTouched(t))}',
+                timeBadge: tdTimeAgo(tdLastTouched(t)),
+                onTap: () => _openTicket(t),
+              ),
+
+          const SizedBox(height: 28),
+
+          // 6. Footer Branding
+          Row(
+            children: [
+              Expanded(child: Divider(color: theme.dividerColor)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'TriageDesk • IT support, made simpler.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
                 ),
+              ),
+              Expanded(child: Divider(color: theme.dividerColor)),
             ],
-            const SizedBox(height: 14),
-            const TdSectionHeader(title: 'Recent activity'),
-            if (recent.isEmpty)
-              Text(
-                'No recent ticket activity.',
-                style: theme.textTheme.bodySmall,
-              )
-            else
-              for (final t in recent)
-                TdActivityItem(
-                  initials: ApiService.currentUserInitials,
-                  action: t.lastModifiedBy == null
-                      ? '${tdTicketLabel(t)} · ${t.status}'
-                      : '${t.lastModifiedBy} updated ${tdTicketLabel(t)}',
-                  description: t.title,
-                  time: tdFormatDateTime(context, tdLastTouched(t)),
-                ),
-          ],
+          ),
         ],
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Workload Analysis Tab (Shows each technician's tickets, %, and resolution rate)
+
 
   // ---- Assigned ---------------------------------------------------------------
   Widget _buildAssignedTab() {
@@ -749,61 +934,75 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
     );
   }
 
-  // ---- Profile ----------------------------------------------------------------
-  Widget _buildProfileTab() {
+}
+
+// ---------------------------------------------------------------------------
+// Header Row Widget with vertical teal bar indicator
+// ---------------------------------------------------------------------------
+class _HeaderRow extends StatelessWidget {
+  final String title;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  const _HeaderRow({
+    required this.title,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: theme.dividerColor),
+        Row(
+          children: [
+            Container(
+              width: 4,
+              height: 18,
+              decoration: BoxDecoration(
+                color: AppTheme.accentTeal,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        TextButton(
+          onPressed: onAction,
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(0, 30),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              TdAvatar(initials: ApiService.currentUserInitials, size: 54),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _technicianName.isEmpty ? 'Technician' : _technicianName,
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    if (_technicianEmail.isNotEmpty)
-                      Text(_technicianEmail, style: theme.textTheme.bodySmall),
-                    const SizedBox(height: 8),
-                    const TdPill(
-                      label: 'Technician',
-                      background: TdColors.progressBg,
-                      foreground: TdColors.progressFg,
-                      showDot: false,
-                    ),
-                  ],
+              Text(
+                actionLabel,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.accentTeal,
                 ),
+              ),
+              const SizedBox(width: 2),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                size: 14,
+                color: AppTheme.accentTeal,
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        TdMenuTile(
-          icon: Icons.tune_rounded,
-          title: 'Settings',
-          subtitle: 'Appearance and app info',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SettingsScreen()),
-          ),
-        ),
-        TdMenuTile(
-          icon: Icons.logout_rounded,
-          title: 'Sign out',
-          color: TdColors.coral,
-          onTap: _confirmSignOut,
         ),
       ],
     );
@@ -811,38 +1010,401 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
 }
 
 // ---------------------------------------------------------------------------
-// "Up next" hero card
+// Hero Metric Card Component
 // ---------------------------------------------------------------------------
-class _UpNextCard extends StatelessWidget {
-  final Ticket ticket;
-  final VoidCallback onOpen;
-  const _UpNextCard({required this.ticket, required this.onOpen});
+class _HeroMetricCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String count;
+  final String label;
+  final VoidCallback onTap;
+
+  const _HeroMetricCard({
+    required this.icon,
+    required this.iconColor,
+    required this.count,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF04404A), TdColors.teal],
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: iconColor, size: 18),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                count,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Claim Ticket Card Widget (Matching Image Design)
+// ---------------------------------------------------------------------------
+class _ClaimTicketCard extends StatelessWidget {
+  final Ticket ticket;
+  final VoidCallback onTap;
+  final VoidCallback onAccept;
+  final bool isAccepting;
+
+  const _ClaimTicketCard({
+    required this.ticket,
+    required this.onTap,
+    required this.onAccept,
+    this.isAccepting = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isCritical = ticket.priority.toLowerCase() == 'critical';
+    final isHigh = ticket.priority.toLowerCase() == 'high';
+    final stripColor = isCritical
+        ? const Color(0xFFE2574C)
+        : isHigh
+            ? const Color(0xFFE8A13A)
+            : AppTheme.accentTeal;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Up next',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
+              Container(width: 5, color: stripColor),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            tdTicketLabel(ticket),
+                            style: TdFonts.monoStyle.copyWith(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.accentTeal,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFDF1DC),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.access_time_rounded,
+                                  size: 12,
+                                  color: Color(0xFF9A6112),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  ticket.status,
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF9A6112),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        ticket.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (ticket.description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          ticket.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.wifi_rounded,
+                            size: 14,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            ticket.category,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              '|',
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.5),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: stripColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.warning_amber_rounded,
+                                  size: 12,
+                                  color: stripColor,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  ticket.priority,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: stripColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.calendar_today_rounded,
+                                size: 12,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                tdFormatDateTime(context, ticket.createdAt),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(
+                            height: 38,
+                            child: FilledButton.icon(
+                              onPressed: isAccepting ? null : onAccept,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppTheme.deepTeal,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                              ),
+                              icon: isAccepting
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.check_rounded,
+                                      size: 16,
+                                    ),
+                              label: const Text(
+                                'Accept ticket',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Activity Tile Component (Matching Image Design)
+// ---------------------------------------------------------------------------
+class _ActivityTile extends StatelessWidget {
+  final String initials;
+  final String name;
+  final String action;
+  final String categoryAndTime;
+  final String timeBadge;
+  final VoidCallback onTap;
+
+  const _ActivityTile({
+    required this.initials,
+    required this.name,
+    required this.action,
+    required this.categoryAndTime,
+    required this.timeBadge,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: AppTheme.accentTeal,
+                child: Text(
+                  initials,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      action,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      categoryAndTime,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Container(
@@ -851,59 +1413,21 @@ class _UpNextCard extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(99),
+                  color: const Color(0xFFE2F3F0),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  ticket.priority,
+                  timeBadge,
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.accentTeal,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            ticket.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${tdTicketLabel(ticket)} · ${ticket.category} · '
-            '${tdFormatDateTime(context, ticket.createdAt)}',
-            style: TdFonts.monoStyle.copyWith(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 11.5,
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: FilledButton(
-              onPressed: onOpen,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: TdColors.deepTeal,
-                minimumSize: const Size(0, 46),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
-              ),
-              child: const Text('Open ticket'),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

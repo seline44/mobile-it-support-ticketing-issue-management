@@ -8,7 +8,6 @@ import '../services/api_service.dart';
 import '../services/sound_service.dart';
 import '../services/whatsapp_contact.dart';
 import '../theme/app_theme.dart';
-import '../theme/td_theme.dart';
 import '../utils/api_timestamp.dart';
 import '../widgets/td_ticket_widgets.dart';
 import '../widgets/td_widgets.dart';
@@ -16,7 +15,6 @@ import '../widgets/user_header.dart';
 import '../widgets/whatsapp_support_panel.dart';
 import 'create_ticket_screen.dart';
 import 'ticket_details_screen.dart';
-import 'login_screen.dart';
 import 'settings_screen.dart';
 
 class ReporterDashboard extends StatefulWidget {
@@ -249,17 +247,6 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
     }
   }
 
-  Future<void> _confirmSignOut() async {
-    final confirmed = await showTdSignOutDialog(context);
-    if (confirmed && mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -267,12 +254,14 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: TdBrandedAppBar(
-        initials: initials,
-        showNotificationDot: _unreadNotificationIds.isNotEmpty,
-        onNotificationsTap: _openNotifications,
-        onAvatarTap: () => setState(() => _currentIndex = 4),
-      ),
+      appBar: _currentIndex == 4
+          ? null
+          : TdBrandedAppBar(
+              initials: initials,
+              showNotificationDot: _unreadNotificationIds.isNotEmpty,
+              onNotificationsTap: _openNotifications,
+              onAvatarTap: () => setState(() => _currentIndex = 4),
+            ),
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
@@ -319,10 +308,6 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
   String get _displayName {
     final name = ApiService.currentUserName;
     return name.isEmpty ? 'Reporter' : name;
-  }
-
-  String get _userEmail {
-    return ApiService.currentUserEmail;
   }
 
   String get _userInitials {
@@ -850,62 +835,7 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
 
   // --- TAB 4: PROFILE & SETTINGS ---
   Widget _buildProfileTab() {
-    final theme = Theme.of(context);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: theme.dividerColor),
-          ),
-          child: Row(
-            children: [
-              TdAvatar(initials: _userInitials, size: 54),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _displayName.isEmpty ? 'Reporter' : _displayName,
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    if (_userEmail.isNotEmpty)
-                      Text(_userEmail, style: theme.textTheme.bodySmall),
-                    const SizedBox(height: 8),
-                    const TdPill(
-                      label: 'Reporter',
-                      background: TdColors.mint,
-                      foreground: TdColors.deepTeal,
-                      showDot: false,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        TdMenuTile(
-          icon: Icons.tune_rounded,
-          title: 'Settings',
-          subtitle: 'Appearance and app info',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SettingsScreen()),
-          ),
-        ),
-        TdMenuTile(
-          icon: Icons.logout_rounded,
-          title: 'Sign out',
-          color: TdColors.coral,
-          onTap: _confirmSignOut,
-        ),
-      ],
-    );
+    return const SettingsScreen();
   }
 
   // --- REUSABLE COMPONENTS ---

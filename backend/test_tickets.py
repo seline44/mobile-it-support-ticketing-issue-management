@@ -24,7 +24,10 @@ class TicketCompletionTests(unittest.TestCase):
     def setUp(self):
         email_notifications = patch.dict(
             "os.environ",
-            {"TICKET_EMAIL_NOTIFICATIONS_ENABLED": "false"},
+            {
+                "TICKET_EMAIL_NOTIFICATIONS_ENABLED": "false",
+                "TESTING": "true",
+            },
         )
         email_notifications.start()
         self.addCleanup(email_notifications.stop)

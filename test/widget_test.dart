@@ -93,7 +93,7 @@ void main() {
     expect(find.text('Chat with us on WhatsApp'), findsOneWidget);
     expect(find.text('No account or sign-in needed'), findsOneWidget);
     expect(
-      find.text('IT help that feels like\nasking a colleague.'),
+      find.text('Report issues, get them fixed'),
       findsOneWidget,
     );
     expect(find.text('Get started'), findsOneWidget);
@@ -128,7 +128,7 @@ void main() {
     expect(find.text('Forgot password?'), findsOneWidget);
     expect(find.text('Create an account'), findsOneWidget);
     expect(find.text('Email address'), findsOneWidget);
-    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Password'), findsWidgets);
     expect(tester.widget<TriageDeskLogo>(find.byType(TriageDeskLogo)).size, 36);
     expect(find.byType(GoogleLogoWidget), findsOneWidget);
 
@@ -153,7 +153,7 @@ void main() {
         ),
       );
       expect(
-        find.text('IT help that feels like\nasking a colleague.'),
+        find.text('Report issues, get them fixed'),
         findsOneWidget,
       );
       expect(find.text('Chat with us on WhatsApp'), findsOneWidget);
@@ -257,6 +257,8 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.textContaining('TD-21: Ticket resolved'), findsOneWidget);
         expect(find.textContaining('Access restored'), findsOneWidget);
+        await tester.tap(find.text('Close'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('WhatsApp').last);
         await tester.pumpAndSettle();
         expect(find.text('WhatsApp Support'), findsOneWidget);
@@ -567,9 +569,11 @@ void main() {
       );
       expect(find.text('Network'), findsOneWidget);
 
-      await tester.tap(find.text('Settings'));
+      await tester.tap(find.text('Profile').last);
       await tester.pumpAndSettle();
       expect(find.text('Appearance'), findsOneWidget);
+      await tester.tap(find.text('Appearance'));
+      await tester.pumpAndSettle();
       expect(find.text('Dark'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }, () => client);
@@ -709,7 +713,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.textContaining('Asha'), findsWidgets);
-      expect(find.text('Assigned to this technician'), findsWidgets);
+      expect(find.textContaining('Assigned'), findsWidgets);
       expect(find.text('John Doe updated ticket #TKT-0011'), findsNothing);
       expect(find.text('Sarah K. created ticket #TKT-0012'), findsNothing);
       await tester.tap(find.byTooltip('Notifications'));

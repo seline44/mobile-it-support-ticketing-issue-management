@@ -37,6 +37,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleLoginRequest(BaseModel):
+    email: EmailStr
+    full_name: str | None = None
+    role: str | None = None
+
+
 class RegistrationRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)
     email: EmailStr
@@ -211,6 +217,84 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             status_code=403,
             detail="Your account cannot access the system. Contact an administrator.",
         )
+
+    token = create_access_token(user)
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role,
+            "is_active": user.is_active,
+            "approval_status": user.approval_status,
+        },
+    }
+
+
+@router.post("/google", response_model=TokenResponse)
+def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
+    email = str(request.email).strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+
+    if user is None:
+        if request.full_name and request.full_name.strip():
+            full_name = request.full_name.strip()
+        else:
+            local_part = email.split('@')[0]
+            full_name = local_part.replace('.', ' ').replace('_', ' ').title()
+
+        if request.role and request.role in {"Reporter", "Technician", "Administrator"}:
+            role = request.role
+        else:
+            if "admin" in email:
+                role = "Administrator"
+            elif "tech" in email or "technician" in email:
+                role = "Technician"
+            else:
+                role = "Reporter"
+
+        new_user = User(
+            full_name=full_name,
+            email=email,
+            password_hash=password_hash.hash(secrets.token_urlsafe(32)),
+            role=role,
+            is_active=True,
+            approval_status="Approved",
+        )
+        try:
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
+            user = new_user
+        except IntegrityError:
+            db.rollback()
+            user = db.query(User).filter(User.email == email).first()
+
+    if user is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not authenticate with Google.",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Your account is disabled. Contact an administrator.",
+        )
+
+    if user.approval_status == "Rejected":
+        raise HTTPException(
+            status_code=403,
+            detail="Your account registration was not approved. Contact an administrator.",
+        )
+
+    if user.approval_status == "Pending":
+        user.approval_status = "Approved"
+        db.commit()
+        db.refresh(user)
 
     token = create_access_token(user)
 

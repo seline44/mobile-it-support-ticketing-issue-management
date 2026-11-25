@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">TriageDesk logo concept</title>
+  <desc id="desc">A clean ticket and checkmark mark beside the TriageDesk wordmark.</desc>
+  <rect width="1200" height="520" rx="32" fill="#F2F7F6"/>
+  <rect x="56" y="48" width="1088" height="424" rx="28" fill="#FFFFFF"/>
+
+  <!-- Ticket mark: a request card with a clear resolved state. -->
+  <g transform="translate(112 100)">
+    <rect width="320" height="320" rx="82" fill="#064E56"/>
+    <path d="M84 82h116a24 24 0 0 1 24 24v20a26 26 0 0 0 0 52v34a24 24 0 0 1-24 24H84a24 24 0 0 1-24-24V106a24 24 0 0 1 24-24Z" fill="#FFFFFF"/>
+    <path d="M102 125h52M102 159h40" fill="none" stroke="#0A8F86" stroke-linecap="round" stroke-width="13"/>
+    <path d="m98 190 18 18 31-34" fill="none" stroke="#064E56" stroke-linecap="round" stroke-linejoin="round" stroke-width="14"/>
+    <path d="M222 104v18" fill="none" stroke="#7FE3D6" stroke-linecap="round" stroke-width="8"/>
+    <circle cx="244" cy="224" r="11" fill="#E5B64F"/>
+  </g>
+
+  <g font-family="Plus Jakarta Sans, Avenir Next, Segoe UI, sans-serif">
+    <text x="500" y="271" fill="#17343A" font-size="76" font-weight="750" letter-spacing="-3">Triage<tspan fill="#0A8F86">Desk</tspan></text>
+    <path d="M506 310h104" stroke="#E5B64F" stroke-linecap="round" stroke-width="7"/>
+    <text x="506" y="363" fill="#587176" font-size="25" font-weight="500" letter-spacing="0.4">Clear requests. Better support.</text>
+  </g>
+</svg>

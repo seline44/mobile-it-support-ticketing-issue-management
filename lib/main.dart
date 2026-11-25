@@ -132,7 +132,7 @@ class WelcomeScreen extends StatelessWidget {
                             const Center(child: _BrandRow()),
                             const SizedBox(height: 28),
                             const Text(
-                              'IT help that feels like\nasking a colleague.',
+                              'Report issues, get them fixed',
                               style: TextStyle(
                                 fontFamily: _sans,
                                 color: Colors.white,
@@ -488,3 +488,5 @@ class _PulsePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
+

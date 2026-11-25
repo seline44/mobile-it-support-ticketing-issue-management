@@ -26,7 +26,7 @@ def send_email(to_email: str, subject: str, body: str) -> None:
     message["To"] = to_email
     message.set_content(body)
 
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=5) as server:
         server.ehlo()
         server.starttls()
         server.ehlo()

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -60,6 +61,241 @@ class _LoginScreenState extends State<LoginScreen> {
           break;
         default:
           throw Exception('Your account has an unrecognized role.');
+      }
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => dashboard),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _showGoogleSignInSheet(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    final desktopEmail = prefs.getString('last_desktop_email') ?? 'aseline744@gmail.com';
+    final desktopName = prefs.getString('last_desktop_name') ?? 'Seline Atieno';
+
+    if (!context.mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const GoogleLogoWidget(),
+                const SizedBox(width: 12),
+                Text(
+                  'Sign in with Google',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(sheetContext).colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            // Detected desktop account tile
+            InkWell(
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                await prefs.setString('last_desktop_email', desktopEmail);
+                await prefs.setString('last_desktop_name', desktopName);
+                await _executeGoogleLogin(desktopEmail, fullName: desktopName);
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: const Color(0xFF06505A),
+                      child: Text(
+                        desktopName.isNotEmpty ? desktopName[0].toUpperCase() : 'S',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            desktopName,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            desktopEmail,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(height: 24),
+            // Use another account tile
+            InkWell(
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _showManualEmailDialog(context);
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.grey.withValues(alpha: 0.15),
+                      ),
+                      child: const Icon(Icons.person_outline_rounded, color: Colors.grey),
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'Use another account',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Before using this app, you can review TriageDesk\'s Privacy Policy and Terms of Service.',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: Colors.grey.shade600,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showManualEmailDialog(BuildContext context) async {
+    final emailController = TextEditingController();
+    final nameController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Sign in with Google'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Full Name',
+                hintText: 'John Doe',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Google Email',
+                hintText: 'user@gmail.com',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final email = emailController.text.trim();
+              final name = nameController.text.trim();
+              if (email.isEmpty || !email.contains('@')) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('Please enter a valid email.')),
+                );
+                return;
+              }
+              Navigator.pop(dialogContext);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('last_desktop_email', email);
+              if (name.isNotEmpty) {
+                await prefs.setString('last_desktop_name', name);
+              }
+              await _executeGoogleLogin(email, fullName: name.isNotEmpty ? name : null);
+            },
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _executeGoogleLogin(String email, {String? fullName}) async {
+    setState(() => _isLoading = true);
+    try {
+      final result = await ApiService.googleLogin(
+        email: email,
+      );
+
+      if (!mounted) return;
+
+      final user = Map<String, dynamic>.from(result['user'] as Map);
+      final userRole = user['role']?.toString();
+      late final Widget dashboard;
+
+      switch (userRole) {
+        case 'Reporter':
+          dashboard = const ReporterDashboard();
+          break;
+        case 'Technician':
+          dashboard = const TechnicianDashboard();
+          break;
+        case 'Administrator':
+          dashboard = const AdminDashboard();
+          break;
+        default:
+          dashboard = const ReporterDashboard();
       }
 
       Navigator.pushReplacement(
@@ -200,7 +436,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
-                          hintText: 'you@school.ac.ke',
+                          hintText: 'Email',
                           prefixIcon: Icon(Icons.mail_outline_rounded),
                         ),
                         validator: (value) {
@@ -232,7 +468,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         textInputAction: TextInputAction.done,
                         onFieldSubmitted: (_) => _isLoading ? null : _login(),
                         decoration: InputDecoration(
-                          hintText: 'Your password',
+                          hintText: 'Password',
                           prefixIcon: const Icon(Icons.lock_outline_rounded),
                           suffixIcon: IconButton(
                             tooltip: _obscurePassword
@@ -361,15 +597,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       SizedBox(
                         height: 52,
                         child: OutlinedButton.icon(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Google sign-in is not configured for this app.',
-                                ),
-                              ),
-                            );
-                          },
+                          onPressed: () => _showGoogleSignInSheet(context),
                           icon: const GoogleLogoWidget(),
                           label: const Text(
                             'Continue with Google',

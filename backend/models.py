@@ -35,7 +35,8 @@ class User(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now()
+        server_default=func.now(),
+        index=True,
     )
     reset_token_hash: Mapped[str | None] = mapped_column(
         String(64),
@@ -68,7 +69,7 @@ class WhatsAppConversation(Base):
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     description: Mapped[str] = mapped_column(Text)
     ticket_id: Mapped[int | None] = mapped_column(
-        ForeignKey("tickets.id"), nullable=True
+        ForeignKey("tickets.id"), nullable=True, index=True
     )
     device: Mapped[str | None] = mapped_column(String(150), nullable=True)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -81,11 +82,10 @@ class WhatsAppMessage(Base):
     provider_message_id: Mapped[str] = mapped_column(
         String(100), primary_key=True
     )
-    phone_number: Mapped[str] = mapped_column(String(16))
+    phone_number: Mapped[str] = mapped_column(String(16), index=True)
     response_text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
-        
+        DateTime(timezone=True), server_default=func.now(), index=True
     )
 
 
@@ -98,28 +98,28 @@ class Ticket(Base):
     )
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text)
-    category: Mapped[str] = mapped_column(String(80))
-    impact: Mapped[str] = mapped_column(String(30))
-    urgency: Mapped[str] = mapped_column(String(30))
+    category: Mapped[str] = mapped_column(String(80), index=True)
+    impact: Mapped[str] = mapped_column(String(30), index=True)
+    urgency: Mapped[str] = mapped_column(String(30), index=True)
     priority: Mapped[str] = mapped_column(String(30), index=True)
-    device: Mapped[str] = mapped_column(String(150), default="")
-    location: Mapped[str] = mapped_column(String(150), default="")
+    device: Mapped[str] = mapped_column(String(150), default="", index=True)
+    location: Mapped[str] = mapped_column(String(150), default="", index=True)
     status: Mapped[str] = mapped_column(String(30), default="Open", index=True)
     
-    reporter_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    reporter_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_technician_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+        ForeignKey("users.id"), nullable=True, index=True
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True), server_default=func.now(), index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True
     )
     resolved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True), nullable=True, index=True
     )
 
 
@@ -127,14 +127,14 @@ class TicketNote(Base):
     __tablename__ = "ticket_notes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"))
-    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     note: Mapped[str] = mapped_column(Text)
     is_internal: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
+        Boolean, default=False, server_default="false", index=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True), server_default=func.now(), index=True
     )
 
 
@@ -142,18 +142,18 @@ class TicketHistory(Base):
     __tablename__ = "ticket_history"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"))
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
     actor_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+        ForeignKey("users.id"), nullable=True, index=True
     )
-    action: Mapped[str] = mapped_column(String(100))
+    action: Mapped[str] = mapped_column(String(100), index=True)
     old_status: Mapped[str | None] = mapped_column(
-        String(30), nullable=True
+        String(30), nullable=True, index=True
     )
     new_status: Mapped[str | None] = mapped_column(
-        String(30), nullable=True
+        String(30), nullable=True, index=True
     )
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True), server_default=func.now(), index=True
     )

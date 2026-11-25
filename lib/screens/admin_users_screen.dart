@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
-import '../theme/app_theme.dart';
 import '../theme/td_theme.dart';
 import '../widgets/td_ticket_widgets.dart';
 import '../widgets/td_widgets.dart';
@@ -544,173 +543,274 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isPending
-              ? TdColors.amber.withValues(alpha: 0.45)
+              ? TdColors.amber.withValues(alpha: 0.5)
               : theme.dividerColor,
+          width: isPending ? 1.5 : 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TdAvatar(initials: _initials(name), size: 44),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name, style: theme.textTheme.titleMedium),
-                    const SizedBox(height: 2),
-                    Text(
-                      email,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: secondaryColor, fontSize: 12.5),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              TdPill(label: status, background: statusBg, foreground: statusFg),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TdPill(
-            label: role,
-            background: roleBg,
-            foreground: roleFg,
-            showDot: false,
-          ),
-          if (!isActive) ...[
-            const SizedBox(height: 8),
-            TdPill(
-              label: 'Locked',
-              background: theme.colorScheme.errorContainer,
-              foreground: theme.colorScheme.error,
-              showDot: false,
-            ),
-          ],
-          if (isPending) ...[
-            const SizedBox(height: 16),
-            Row(
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: isUpdating || userId == null
-                        ? null
-                        : () => _updateApproval(user, 'Rejected'),
-                    icon: const Icon(Icons.close_rounded, size: 18),
-                    label: const Text('Decline'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(0, 44),
-                      foregroundColor: TdColors.coral,
-                    ),
-                  ),
-                ),
+                TdAvatar(initials: _initials(name), size: 44),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: FilledButton.icon(
-                    onPressed: isUpdating || userId == null
-                        ? null
-                        : () => _updateApproval(user, 'Approved'),
-                    icon: isUpdating
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          )
-                        : const Icon(Icons.check_rounded, size: 18),
-                    label: Text(isUpdating ? 'Updating...' : 'Approve'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(0, 44),
+                          ),
+                          if (!isActive)
+                            Container(
+                              margin: const EdgeInsets.only(left: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.errorContainer,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'Locked',
+                                style: TextStyle(
+                                  color: theme.colorScheme.error,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        email,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: secondaryColor, fontSize: 12.5),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          TdPill(
+                            label: role,
+                            background: roleBg,
+                            foreground: roleFg,
+                            showDot: false,
+                          ),
+                          const SizedBox(width: 8),
+                          TdPill(
+                            label: status,
+                            background: statusBg,
+                            foreground: statusFg,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (canLinkWhatsApp) ...[
+            Divider(height: 1, color: theme.dividerColor),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.chat_outlined,
+                    size: 16,
+                    color: hasLinked ? TdColors.green : secondaryColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      hasLinked
+                          ? 'WhatsApp: $linkedWhatsAppNumber'
+                          : 'No WhatsApp number linked',
+                      style: TextStyle(
+                        color: hasLinked
+                            ? theme.colorScheme.onSurface
+                            : secondaryColor,
+                        fontSize: 12.5,
+                        fontWeight: hasLinked
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  TextButton(
+                    onPressed: isUpdating || userId == null
+                        ? null
+                        : () => _linkWhatsAppNumber(user),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 32),
+                    ),
+                    child: isUpdating
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            hasLinked ? 'Change' : 'Link WhatsApp',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ],
+              ),
             ),
           ],
-          if (canLinkWhatsApp) ...[
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Icon(Icons.chat_outlined,
-                    size: 16, color: hasLinked ? TdColors.green : secondaryColor),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    hasLinked
-                        ? 'WhatsApp linked: $linkedWhatsAppNumber'
-                        : 'No WhatsApp number linked',
-                    style: TextStyle(color: secondaryColor, fontSize: 12.5),
-                  ),
-                ),
-                TextButton(
-                  onPressed: isUpdating || userId == null
-                      ? null
-                      : () => _linkWhatsAppNumber(user),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(0, 34),
-                  ),
-                  child: isUpdating
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+          Divider(height: 1, color: theme.dividerColor),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.2,
+              ),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(16),
+              ),
+            ),
+            child: isPending
+                ? Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: isUpdating || userId == null
+                              ? null
+                              : () => _updateApproval(user, 'Rejected'),
+                          icon: const Icon(Icons.close_rounded, size: 16),
+                          label: const Text('Decline'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 36),
+                            foregroundColor: TdColors.coral,
+                            side: BorderSide(
+                              color: TdColors.coral.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: isUpdating || userId == null
+                              ? null
+                              : () => _updateApproval(user, 'Approved'),
+                          icon: isUpdating
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.check_rounded, size: 16),
+                          label: Text(isUpdating ? 'Saving...' : 'Approve'),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(0, 36),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (isCurrentUser)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text(
+                            'Current admin account',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                              color: secondaryColor,
+                            ),
+                          ),
                         )
-                      : Text(hasLinked ? 'Change' : 'Link WhatsApp',
-                          style: const TextStyle(fontSize: 13)),
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: isUpdating || userId == null || isCurrentUser
-                    ? null
-                    : () => _setUserLocked(user, locked: isActive),
-                icon: Icon(
-                  isActive
-                      ? Icons.lock_outline_rounded
-                      : Icons.lock_open_rounded,
-                  size: 18,
-                ),
-                label: Text(isActive ? 'Lock account' : 'Unlock account'),
-              ),
-              OutlinedButton.icon(
-                onPressed: isUpdating || userId == null || isCurrentUser
-                    ? null
-                    : () => _deleteUser(user),
-                icon: isDeleting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.delete_forever_rounded, size: 18),
-                label: Text(isCurrentUser ? 'Current account' : 'Delete user'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: theme.colorScheme.error,
-                  side: BorderSide(
-                    color: theme.colorScheme.error.withValues(alpha: 0.5),
+                      else ...[
+                        OutlinedButton.icon(
+                          onPressed: isUpdating || userId == null
+                              ? null
+                              : () => _setUserLocked(user, locked: isActive),
+                          icon: Icon(
+                            isActive
+                                ? Icons.lock_outline_rounded
+                                : Icons.lock_open_rounded,
+                            size: 16,
+                          ),
+                          label: Text(
+                            isActive ? 'Lock account' : 'Unlock account',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 36),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: isUpdating || userId == null
+                              ? null
+                              : () => _deleteUser(user),
+                          icon: isDeleting
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.delete_forever_rounded,
+                                  size: 16),
+                          label: Text(
+                            isCurrentUser ? 'Current account' : 'Delete user',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 36),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            foregroundColor: theme.colorScheme.error,
+                            side: BorderSide(
+                              color: theme.colorScheme.error.withValues(
+                                alpha: 0.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ),
-              ),
-            ],
           ),
         ],
       ),

@@ -153,9 +153,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   'Locked out? It happens.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 26,
+                    fontSize: 23,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: -0.6,
+                    letterSpacing: -0.4,
+                    height: 1.25,
                   ),
                 ),
                 const SizedBox(height: 10),
