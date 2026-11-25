@@ -278,6 +278,186 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     return 'Low';
   }
 
+  void _openImageViewer(BuildContext context, String imageName) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: SafeArea(
+          child: Column(
+            children: [
+              AppBar(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      imageName,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const Text(
+                      'Pinch or scroll to zoom in/out',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+                leading: IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(dialogContext),
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Container(
+                      margin: const EdgeInsets.all(16),
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white24),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black54,
+                            blurRadius: 20,
+                            spreadRadius: 5,
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            height: 280,
+                            width: double.infinity,
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFF0F4C5C), Color(0xFF1F2937), Color(0xFF0F172A)],
+                              ),
+                            ),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CustomPaint(
+                                  size: const Size(double.infinity, 280),
+                                  painter: _ImageGridPainter(),
+                                ),
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.accentTeal.withValues(alpha: 0.25),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: AppTheme.accentTeal, width: 2),
+                                      ),
+                                      child: const Icon(
+                                        Icons.photo_size_select_actual_rounded,
+                                        size: 48,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black45,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.hd_rounded, color: AppTheme.accentTeal, size: 18),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            imageName,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      imageName,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    const Text(
+                                      'Full High-Definition Capture',
+                                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.accentTeal.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: AppTheme.accentTeal),
+                                  ),
+                                  child: const Text(
+                                    'Original Quality',
+                                    style: TextStyle(color: AppTheme.accentTeal, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Close Image Viewer'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.accentTeal,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   IconData _categoryIcon() {
     switch (widget.category.toLowerCase()) {
       case 'hardware':
@@ -379,8 +559,24 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
       });
     } catch (error) {
       if (!mounted) return;
+      if (_updates.isEmpty && widget.createdAt != null) {
+        _updates.add({
+          'title': 'Ticket created (${widget.category})',
+          'time': _formatHistoryTime(widget.createdAt!),
+          'sortTime': widget.createdAt!,
+        });
+      }
+
+      String message = error.toString().replaceFirst('Exception: ', '');
+      if (message.contains('Failed to fetch') ||
+          message.contains('ClientException') ||
+          message.contains('Connection refused') ||
+          message.contains('Failed host lookup')) {
+        message = 'Unable to connect to backend server. Please verify API server is running.';
+      }
+
       setState(() {
-        _historyError = error.toString().replaceFirst('Exception: ', '');
+        _historyError = message;
         _isLoadingHistory = false;
       });
     } finally {
@@ -741,52 +937,62 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: cardColor,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: borderColor),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: AppTheme.accentTeal.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
+                    InkWell(
+                      onTap: () => _openImageViewer(context, _attachmentName!),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: cardColor,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: borderColor),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accentTeal.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.image_rounded,
+                                color: AppTheme.accentTeal,
+                              ),
                             ),
-                            child: const Icon(
-                              Icons.image_rounded,
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _attachmentName!,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: textPrimary,
+                                      fontSize: 14.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  const Text(
+                                    'Tap to open full image preview',
+                                    style: TextStyle(
+                                      color: AppTheme.accentTeal,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(
+                              Icons.open_in_full_rounded,
+                              size: 18,
                               color: AppTheme.accentTeal,
                             ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _attachmentName!,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: textPrimary,
-                                    fontSize: 14.5,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Attached by reporter',
-                                  style: TextStyle(
-                                    color: textSecondary,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -913,20 +1119,22 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (_isLoadingHistory)
+                        if (_isLoadingHistory && _updates.isEmpty)
                           const Padding(
                             padding: EdgeInsets.all(16),
                             child: Center(child: CircularProgressIndicator()),
                           )
-                        else if (_historyError != null)
+                        else if (_updates.isEmpty && _historyError != null)
                           Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
                               children: [
                                 Text(
                                   _historyError!,
+                                  textAlign: TextAlign.center,
                                   style: TextStyle(color: textSecondary),
                                 ),
+                                const SizedBox(height: 8),
                                 TextButton(
                                   onPressed: _loadHistory,
                                   child: const Text('Try again'),
@@ -942,7 +1150,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                               style: TextStyle(color: textSecondary),
                             ),
                           )
-                        else
+                        else ...[
                           for (int i = 0; i < _updates.length; i++)
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1009,6 +1217,38 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                                 ),
                               ],
                             ),
+                          if (_historyError != null) ...[
+                            const Divider(height: 20),
+                            Row(
+                              children: [
+                                Icon(Icons.wifi_off_rounded,
+                                    size: 16, color: Colors.orange.shade700),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _historyError!,
+                                    style: TextStyle(
+                                      color: textSecondary,
+                                      fontSize: 11.5,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _loadHistory,
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: const Text('Retry',
+                                      style: TextStyle(fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
                       ],
                     ),
                   ),
@@ -1354,4 +1594,24 @@ class _CsatRatingCardState extends State<_CsatRatingCard> {
       ),
     );
   }
+}
+
+class _ImageGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.05)
+      ..strokeWidth = 1.0;
+
+    const step = 30.0;
+    for (double x = 0; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
