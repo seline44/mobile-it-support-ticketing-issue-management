@@ -105,7 +105,8 @@ class Ticket(Base):
     device: Mapped[str] = mapped_column(String(150), default="", index=True)
     location: Mapped[str] = mapped_column(String(150), default="", index=True)
     status: Mapped[str] = mapped_column(String(30), default="Open", index=True)
-    
+    attachment_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     reporter_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_technician_id: Mapped[int | None] = mapped_column(

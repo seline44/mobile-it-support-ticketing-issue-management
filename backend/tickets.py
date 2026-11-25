@@ -320,6 +320,7 @@ def serialize_ticket(db: Session, ticket: Ticket) -> dict:
         "created_at": ticket.created_at,
         "updated_at": ticket.updated_at,
         "resolved_at": ticket.resolved_at,
+        "attachment_name": ticket.attachment_name,
     }
 
 
@@ -348,6 +349,7 @@ def create_ticket(
         location=request.location.strip(),
         status="Open",
         reporter_id=user.id,
+        attachment_name=request.attachment_name.strip() if request.attachment_name else None,
     )
 
     try:

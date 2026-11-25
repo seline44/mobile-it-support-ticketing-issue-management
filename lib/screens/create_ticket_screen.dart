@@ -227,6 +227,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
         urgency: _selectedUrgency,
         device: _deviceController.text.trim(),
         location: _locationController.text.trim(),
+        attachmentName: _attachedImageName,
       );
 
       if (!mounted) return;

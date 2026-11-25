@@ -24,6 +24,7 @@ class Ticket {
   DateTime? updatedAt;
   DateTime? lastModifiedAt;
   DateTime? resolvedAt;
+  final String? attachmentName;
 
   Ticket({
     required this.id,
@@ -48,6 +49,7 @@ class Ticket {
     this.lastModifiedAt,
     this.resolvedAt,
     this.ticketNumber,
+    this.attachmentName,
   });
 
   factory Ticket.fromJson(Map<String, dynamic> json) {
@@ -86,6 +88,7 @@ class Ticket {
           ? assignedId
           : int.tryParse(assignedId?.toString() ?? ''),
       resolution: json['resolution']?.toString(),
+      attachmentName: json['attachment_name']?.toString(),
     );
   }
 }

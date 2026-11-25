@@ -222,6 +222,7 @@ class _ReporterDashboardState extends State<ReporterDashboard> {
           createdAt: ticket.createdAt,
           lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
           resolvedAt: ticket.resolvedAt,
+          attachmentName: ticket.attachmentName,
         ),
       ),
     );

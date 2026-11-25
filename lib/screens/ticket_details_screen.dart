@@ -24,6 +24,7 @@ class TicketDetailsScreen extends StatefulWidget {
   final DateTime? createdAt;
   final DateTime? lastModifiedAt;
   final DateTime? resolvedAt;
+  final String? attachmentName;
 
   const TicketDetailsScreen({
     super.key,
@@ -43,6 +44,7 @@ class TicketDetailsScreen extends StatefulWidget {
     this.createdAt,
     this.lastModifiedAt,
     this.resolvedAt,
+    this.attachmentName,
   });
 
   @override
@@ -201,6 +203,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
   String? _assignedTechnician;
   DateTime? _lastModifiedAt;
   DateTime? _resolvedAt;
+  String? _attachmentName;
   Timer? _liveUpdateTimer;
 
   @override
@@ -213,6 +216,7 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
     _assignedTechnician = widget.assignedTechnician;
     _lastModifiedAt = widget.lastModifiedAt;
     _resolvedAt = widget.resolvedAt;
+    _attachmentName = widget.attachmentName;
     _loadHistory();
     _liveUpdateTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
@@ -365,6 +369,8 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
         _resolvedAt = ticket['resolved_at'] == null
             ? null
             : parseApiTimestamp(ticket['resolved_at'].toString());
+        _attachmentName =
+            ticket['attachment_name']?.toString() ?? _attachmentName;
         _updates
           ..clear()
           ..addAll(updates);
@@ -720,6 +726,70 @@ class _TicketDetailsScreenState extends State<TicketDetailsScreen> {
                       style: TextStyle(color: textPrimary, height: 1.5),
                     ),
                   ),
+
+                  if (_attachmentName != null && _attachmentName!.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Attached Image',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: textPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentTeal.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.image_rounded,
+                              color: AppTheme.accentTeal,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _attachmentName!,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: textPrimary,
+                                    fontSize: 14.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Attached by reporter',
+                                  style: TextStyle(
+                                    color: textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
 
                   const SizedBox(height: 24),
 

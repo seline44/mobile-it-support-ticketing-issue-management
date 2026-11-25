@@ -255,6 +255,7 @@ class ApiService {
     required String urgency,
     String device = '',
     String location = '',
+    String? attachmentName,
   }) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/tickets'),
@@ -267,6 +268,7 @@ class ApiService {
         'urgency': urgency,
         'device': device,
         'location': location,
+        'attachment_name': attachmentName,
       }),
     );
 

@@ -12,6 +12,7 @@ class TicketCreate(BaseModel):
     urgency: str
     device: str = Field(default="", max_length=150)
     location: str = Field(default="", max_length=150)
+    attachment_name: str | None = Field(default=None, max_length=255)
 
 
 class TicketResponse(BaseModel):
@@ -29,6 +30,7 @@ class TicketResponse(BaseModel):
     location: str
     status: str
     resolution: str | None = None
+    attachment_name: str | None = None
     reporter_id: int
     reporter_name: str | None = None
     reporter_phone: str | None = None

@@ -346,6 +346,7 @@ class _TechnicianDashboardState extends State<TechnicianDashboard> {
           createdAt: ticket.createdAt,
           lastModifiedAt: ticket.lastModifiedAt ?? ticket.updatedAt,
           resolvedAt: ticket.resolvedAt,
+          attachmentName: ticket.attachmentName,
         ),
       ),
     );
